@@ -14,6 +14,7 @@
         <file alias="chevron_down.svg">resources/icons/chevron_down.svg</file>
         <file alias="chevron_left.svg">resources/icons/chevron_left.svg</file>
         <file alias="chevron_right.svg">resources/icons/chevron_right.svg</file>
+        <file alias="chevron_up.svg">resources/icons/chevron_up.svg</file>
         <file alias="color_tag.svg">resources/icons/color_tag.svg</file>
         <file alias="Collapse.svg">resources/icons/Collapse.svg</file>
         <file alias="Expand.svg">resources/icons/Expand.svg</file>

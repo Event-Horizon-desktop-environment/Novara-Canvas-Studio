@@ -274,8 +274,12 @@ void create_row(RenderQueuePanel::JobRow& r, const canvas::core::RenderJob& j,
     r.status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     r.status->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     header->addWidget(r.status);
+    QToolButton* up_btn = make_row_action("chevron_up", RenderQueuePanel::tr("Raise priority"));
+    QToolButton* down_btn = make_row_action("chevron_down", RenderQueuePanel::tr("Lower priority"));
     QToolButton* edit_btn = make_row_action("edit", RenderQueuePanel::tr("Edit settings"));
     QToolButton* close_btn = make_row_action("close", RenderQueuePanel::tr("Remove job"));
+    header->addWidget(up_btn);
+    header->addWidget(down_btn);
     header->addWidget(edit_btn);
     header->addWidget(close_btn);
     v->addLayout(header);
@@ -304,6 +308,12 @@ void create_row(RenderQueuePanel::JobRow& r, const canvas::core::RenderJob& j,
             [panel, id] { emit panel->job_remove_clicked(id); });
     QObject::connect(edit_btn, &QToolButton::clicked, panel,
             [panel, id] { emit panel->job_edit_clicked(id); });
+    QObject::connect(up_btn, &QToolButton::clicked, panel,
+            [panel, id] { emit panel->job_priority_up(id); });
+    QObject::connect(down_btn, &QToolButton::clicked, panel,
+            [panel, id] { emit panel->job_priority_down(id); });
+    r.priority_up = up_btn;
+    r.priority_down = down_btn;
 
     r.item = new QListWidgetItem(list);
     r.item->setSizeHint(widget->sizeHint());
@@ -338,6 +348,8 @@ void RenderQueuePanel::refresh() {
             r.status = cached->status;
             r.primary = cached->primary;
             r.path = cached->path;
+            r.priority_up = cached->priority_up;
+            r.priority_down = cached->priority_down;
             rows_.erase(cached);
         } else {
             create_row(r, j, list_, this);
@@ -358,6 +370,9 @@ void RenderQueuePanel::refresh() {
                                             .arg(css(tokens().ink_muted)));
                 break;
         }
+        const bool queued_now = j.status == canvas::core::RenderJob::Status::Queued;
+        if (r.priority_up) r.priority_up->setEnabled(queued_now);
+        if (r.priority_down) r.priority_down->setEnabled(queued_now);
         r.path->setToolTip(QString::fromStdString(j.output_path));
         r.path->setText(QString::fromStdString(j.output_path));
         QString primary = res_summary(j.settings);

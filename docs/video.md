@@ -32,7 +32,8 @@ All numeric laws live in headless modules under `core/` (or `gui/src/Widgets/` w
 pattern requires it — check `check_qtdep.sh`'s allowlist), following the `audio_mix.hpp` pattern:
 model fields in `Clip` → one law function shared by playback renderer, export renderer, and
 Inspector. The Inspector commits every gesture as a single undoable `ICommand` via the existing
-snapshot `edit_ops` path (`set_clip_visual` analog of `set_clip_audio_processing`).
+snapshot `edit_ops` path (`set_clip_transform` / `set_clip_composite` — the visual
+analogs of `set_clip_audio_processing`).
 
 New model fields must round-trip in `project.hpp` JSON (bump `kProjectVersion` only if the file
 format actually changes shape; field-addition with defaults is backward-compatible).
@@ -96,7 +97,9 @@ transformation, cheap in a fragment shader (one 3×3 matrix + divide).
    scale/opacity so rotation/anchors come free; **verify against Resolve anchor semantics** (scale
    keeps the anchor pixel pinned) with a unit test.
 4. Inspector: Position/Rotation/Zoom sliders+spins (Resolve ranges: rotation ±360 with free spin,
-   position ±frame, zoom 0..10 default 1), chain toggle, Flip buttons. Pitch/Yaw sliders ±90°.
+   position ±frame, zoom 0..10 default 1), chain toggle, Flip buttons. Pitch/Yaw are spin boxes at
+   ±180°, but they are **currently unwired**: there is no `pitch_deg`/`yaw_deg` on `Clip` and
+   `set_clip_transform` takes no pitch/yaw parameters, so the controls are inert until step 1 lands.
    Defaults all 0 / 1 so identity = current behavior (backward-compatible).
 
 ---
@@ -175,13 +178,19 @@ Screen `Cs + Cb − Cs·Cb`,
 Overlay `(Cb ≤ 0.5) ? 2·Cs·Cb : 1 − 2·(1−Cs)·(1−Cb)` (separable, per-channel).
 
 ### Implementation
-1. `blend_mode` already exists on `Clip` (`Normal/Add/Multiply/Screen/Overlay`), `opacity` exists —
-   both already reach the renderer per AGENTS.md. **Verify** the export/playback composite applies
-   the mode *and* scales the clip's alpha by `opacity` before the W3C operator, in the correct
-   track order (top track last / first-active-wins per the app's convention).
+1. `blend_mode` already exists on `Clip` with **8** modes —
+   `Normal/Add/Multiply/Screen/Overlay/SoftLight/Subtract/Difference` (`timeline/blend.hpp`,
+   `kBlendModeCount = 8`; the first five keep their legacy enum values 0–4, the last three are
+   appended) — and `opacity` exists; both already reach the renderer per AGENTS.md. **Verify** the
+   export/playback composite applies the mode *and* scales the clip's alpha by `opacity` before the
+   W3C operator, in the correct track order (top track last / first-active-wins per the app's
+   convention).
 2. GPU path: blend is only needed when ≥2 active layers or `opacity < 1`; keep the single-clip fast
    path but honor `opacity`.
-3. Unit tests: port the W3C test vectors (co/αo above) for the 5 modes into `composite` core test.
+3. Unit tests: the W3C operator law is now locked by the headless `blend_modes` core test
+   (`core/tests/blend_modes_test.cpp`, built on `timeline/blend.hpp` + `grade_graph/composite.hpp`):
+   all 8 modes within 1 byte of the float oracle across a value grid, the legacy enum values 0–4
+   preserved with the three new modes appended, and `set_clip_composite` + JSON round-trip per mode.
 
 ---
 
@@ -317,9 +326,10 @@ Standard ffmpeg idiom for Crop-mode: `scale=…:force_original_aspect_ratio=incr
 - All new law modules are Qt-free (append to `check_qtdep.sh` allowlist, wire a `canvas_add_headless_test`).
 - Undo = one snapshot cmd per committed gesture; renable playback-worker immutable-copy handoff
   (already the edit path).
-- **"Wired" today** (verify before assuming): Composite Mode + Opacity reach the renderer; Zoom,
-  Position, Rotation, Anchor, Flip reach the renderer but the Inspector pages may still be sparse.
-  Everything else is placeholder UI.
+- **"Wired" today** (verified 2026-09-17): Transform (Zoom/Position/Rotation/Anchor/Flip) via
+  `set_clip_transform`, Composite (blend mode + Opacity) via `set_clip_composite`, and Title via
+  `set_clip_title`. Cropping, Dynamic Zoom, Speed Change, Stabilization, Lens Correction, Retime
+  and Scaling are empty placeholder categories in the Video tab, and Pitch/Yaw are inert (Phase 1).
 - Reserved follow-up (out of scope here): a general keyframe/tangent engine (Dynamic Zoom uses only
   its two implicit keyframes for now), realtime optical-flow intermediate frames, rolling-shutter
   correction in the stabilization analyzer, and a neural Speed Warp equivalent.

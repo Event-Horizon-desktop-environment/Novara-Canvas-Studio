@@ -376,11 +376,10 @@ private:
                 if (gfi.src_frame >= 0 && tl_per_frame == 1.0) {
                     if (judder_prev_src != INT64_MIN && gfi.src_frame != judder_prev_src + 1) {
                         telemetry->note_stall();
-                        fprintf(stderr,
-                                "[FRAME-DIAG] tl_frame=%lld src=+%lld (prev src=%lld) delta=%lld\n",
-                                (long long)tl, (long long)gfi.src_frame,
-                                (long long)judder_prev_src,
-                                (long long)(gfi.src_frame - judder_prev_src));
+                        CANVAS_LOG("FRAME-DIAG tl_frame=%lld src=+%lld (prev src=%lld) delta=%lld",
+                                   (long long)tl, (long long)gfi.src_frame,
+                                   (long long)judder_prev_src,
+                                   (long long)(gfi.src_frame - judder_prev_src));
                     }
                     judder_prev_src = gfi.src_frame;
                 }
@@ -917,8 +916,9 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
         avformat_free_context(oc);
         return fail("Failed to open video encoder: " + s.video_codec);
     }
-    fprintf(stderr, "[dbg] after open: vctx time_base=%d/%d framerate=%d/%d pix_fmt=%d\n",
-            vctx->time_base.num, vctx->time_base.den, vctx->framerate.num, vctx->framerate.den, vctx->pix_fmt);
+    CANVAS_LOG("dbg after open: vctx time_base=%d/%d framerate=%d/%d pix_fmt=%d",
+               vctx->time_base.num, vctx->time_base.den, vctx->framerate.num,
+               vctx->framerate.den, vctx->pix_fmt);
 
     AVStream* vst = avformat_new_stream(oc, nullptr);
     if (!vst) { avcodec_free_context(&vctx); avformat_free_context(oc); return fail("No video stream."); }
@@ -927,7 +927,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     vst->time_base = vctx->time_base;
     vst->r_frame_rate = vctx->framerate;
     vst->avg_frame_rate = vctx->framerate;
-    fprintf(stderr, "[dbg] vst->time_base set to %d/%d\n", vst->time_base.num, vst->time_base.den);
+    CANVAS_LOG("dbg vst->time_base set to %d/%d", vst->time_base.num, vst->time_base.den);
 
     const bool do_audio = !s.remove_audio && !s.audio_codec.empty() && s.duration_frames > 0;
     AVCodecContext* actx = nullptr;

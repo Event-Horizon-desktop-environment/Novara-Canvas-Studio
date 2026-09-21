@@ -10,6 +10,7 @@ class QListWidgetItem;
 class QPushButton;
 class QProgressBar;
 class QLabel;
+class QToolButton;
 
 namespace canvas::gui {
 
@@ -22,6 +23,8 @@ public:
         QLabel* status = nullptr;
         QLabel* primary = nullptr;
         QLabel* path = nullptr;
+        QToolButton* priority_up = nullptr;
+        QToolButton* priority_down = nullptr;
     };
 
     explicit RenderQueuePanel(QWidget* parent = nullptr);
@@ -38,6 +41,8 @@ signals:
     void clear_queued_clicked();
     void job_remove_clicked(uint64_t id);
     void job_edit_clicked(uint64_t id);
+    void job_priority_up(uint64_t id);
+    void job_priority_down(uint64_t id);
 
 private:
     void build();

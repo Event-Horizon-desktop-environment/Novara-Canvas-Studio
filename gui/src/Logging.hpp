@@ -14,6 +14,7 @@
 namespace canvas::gui {
 
 inline bool debug_enabled() {
+    if (!CANVAS_LOGGING) return false;
     static const bool on = [] {
         const char* e = std::getenv("CANVAS_DEBUG");
         return e && *e && std::string(e) != "0";
@@ -22,6 +23,7 @@ inline bool debug_enabled() {
 }
 
 inline bool playback_debug() {
+    if (!CANVAS_LOGGING) return false;
     static const bool on = [] {
         const char* e = std::getenv("CANVAS_PLAYBACK_DEBUG");
         return e && *e && std::string(e) != "0";
@@ -40,6 +42,7 @@ inline const char* log_file_path() {
 }
 
 inline void reset_log_file() {
+    if (!CANVAS_LOGGING) return;
     canvas::core::log::reset_file();
     canvas::core::log::reset_route_files();
     std::remove(log_file_path());
@@ -58,6 +61,8 @@ inline void reset_log_file() {
 }
 
 inline void message_handler(QtMsgType type, const QMessageLogContext&, const QString& msg) {
+    if (!CANVAS_LOGGING && (type == QtDebugMsg || type == QtInfoMsg || type == QtWarningMsg))
+        return;
     const bool verbose = (type == QtDebugMsg || type == QtInfoMsg);
     if (verbose && !debug_enabled()) return;
 

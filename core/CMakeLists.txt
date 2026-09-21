@@ -12,7 +12,7 @@ set(CANVAS_VAAPI_ENABLED OFF)
 if(LIBVA_FOUND)
     set(CANVAS_VAAPI_ENABLED ON)
 endif()
-message(STATUS "Nova Canvas VAAPI zero-copy: ${CANVAS_VAAPI_ENABLED}")
+message(STATUS "Novara Canvas VAAPI zero-copy: ${CANVAS_VAAPI_ENABLED}")
 
 enable_language(C)
 add_library(rnnoise STATIC
@@ -47,7 +47,7 @@ FetchContent_Declare(whispercpp
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(whispercpp)
-message(STATUS "Nova Canvas whisper.cpp engine: pinned v1.9.4 (transcribe seam)")
+message(STATUS "Novara Canvas whisper.cpp engine: pinned v1.9.4 (transcribe seam)")
 foreach(_w_t ggml ggml-cpu ggml-base whisper parakeet)
     if(TARGET ${_w_t})
         set_target_properties(${_w_t} PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
@@ -110,7 +110,7 @@ if(CUDAToolkit_FOUND)
         set(CANVAS_CUDA_RUNTIME CUDA::cudart)
     endif()
 
-message(STATUS "Nova Canvas CUDA acceleration: ${CANVAS_CUDA_ENABLED} (nvcc=${CANVAS_NVCC})")
+message(STATUS "Novara Canvas CUDA acceleration: ${CANVAS_CUDA_ENABLED} (nvcc=${CANVAS_NVCC})")
 
 add_library(canvas_core STATIC
     src/media/frame_cache.cpp

@@ -21,6 +21,10 @@ ctest --test-dir build
 - `-t, --type TYPE` — `Release` (default), `Debug`, or `RelWithDebInfo`
 - `-j, --jobs N` — parallel build jobs
 - `-r, --no-build` — skip the build (useful with `-d` to just install deps)
+- `-h, --help` — print the option list
+
+After a successful build, `build.sh` asks whether to install the freshly built
+binary system-wide via `pkexec`/`sudo` (`cmake --install` into `/usr`).
 
 Distro detection matters for dependency installs, not for the build itself.
 Everything is detected by CMake at configure time. If Ninja is missing,
@@ -40,30 +44,37 @@ cmake --build build
 Use `./build.sh -t Debug` or pass `-DCMAKE_BUILD_TYPE=Debug`. Two debugging
 aids worth knowing:
 
-- **Verbose logging** is gated behind an env var. Run with `CANVAS_DEBUG=1`
-  to enable logging; it writes to stderr plus a log file (default
-  `canvas_debug.log`, override with `CANVAS_LOG_FILE` for the filename).
-- The **`roundtrip` test** is designed to be run under ASan for the edit-op /
-  serialization half of the code (see Testing).
+- **Logging is a Debug-build feature.** Release builds compile the verbose
+  routes out — only errors (`log_error`, Qt `qCritical`/`qFatal`) still print.
+  In a Debug build, run with `CANVAS_DEBUG=1` to enable logging (it writes to
+  stderr plus a log file, default `~/studio/canvas_debug.log`, override the
+  file with `CANVAS_LOG_FILE`); `CANVAS_PLAYBACK_DEBUG=1` raises the playback
+  verbosity. `CANVAS_DEBUG=1` has no effect in a Release build.
+- The repo keeps an **ASan tree** (`build-asan/`, Debug +
+  `-fsanitize=address`) for hunting memory bugs in the edit-op / serialization
+  half of the engine; the `roundtrip` test is the one that exercises that path.
 
 ## The zero-warning rule
 
-This repo treats compiler warnings as build failures. Every target — the GUI
-app, the core library, and every test — builds under `-Wall -Wextra` and must
-be quiet. If a change introduces a warning, it is flagged before being
-handed off. `-Werror` is deliberately *not* enabled on the GUI app target, so
-this is a discipline, not a mechanical gate — never ship a change that warns.
+This repo treats compiler warnings as build failures. `canvas_core` compiles
+with `-Wall -Wextra -Wpedantic -Werror` on GNU/Clang, and because every target
+— the GUI app, the core library, and every test — links `canvas_core`, they all
+inherit `-Werror`. A warning therefore fails the build outright rather than
+being caught by review.
 
-There are three places this applies: the Debug build, the Release build, and
-the `build-release/` tree.
+There are three trees to keep clean: `build/` (Release), `build-debug/`
+(Debug), and the `build-release/` tree.
 
 ## The headless Qt-free guard
 
 `build.sh` runs `scripts/check_qtdep.sh -q` at the end of every build. It
 verifies that the so-called headless modules — everything in `core/` plus the
-extracted GUI playback modules — contain no `#include <Q...>`. This seam is
-what keeps the engine and the extraction tests buildable without a display.
-If a stray Qt include sneaks in, the build fails with a clear message.
+extracted GUI modules (the playback stack, the `audio_targets` /
+`deliver_settings_model` / `source_preview_model` seams, and the timeline
+interaction math) — contain no `#include <Q...>`. The script's allowlist is
+authoritative; keep it in sync when a headless module moves. This seam is what
+keeps the engine and the extraction tests buildable without a display. If a
+stray Qt include sneaks in, the build fails with a clear message.
 
 ## Installing to the system
 
@@ -71,11 +82,16 @@ The default `./build` is a user-local build. To install into `/usr` there's a
 dedicated release tree and a `justfile` on top:
 
 ```sh
-just build-release                 # compile only, no install
-just install                       # rebuild + install into /usr (needs sudo)
-just install-release               # == just build-release, then sudo-install
-just uninstall                     # removes canvas + legacy event-horizon installs
+just configure-release   # cmake-configure build-release/ (install prefix /usr)
+just build-release       # compile build-release/ only, no install
+just install             # configure + build + install into /usr (run as root/sudo)
+just install-release     # build-release as your user, then sudo-install
+just uninstall           # removes canvas + legacy event-horizon installs
 ```
+
+`just install` runs `cmake --install` without wrapping it in `sudo`, so it has
+to be run as root (or via `sudo just install`); `just install-release` is the
+non-root path. There are also `just test`, `just test-core`, and `just test-gui`.
 
 Install layout (matches the `.desktop` launcher):
 
@@ -95,34 +111,66 @@ by root (built via `sudo just install` before), rebuild it as root again or
 ctest --test-dir build
 ```
 
-11 tests, split into two families:
+**77 tests**, split across four families (run `ctest --test-dir build -N` for
+the authoritative list). Everything passes on this machine except two Vulkan
+render-kernel stubs (below), which SKIP-as-fail and are still WIP.
 
-**Core engine** (`core/tests/`):
+**Core engine** (`core/tests/`): every test links `canvas_core`, and none of
+them need Qt or a display. They cover the model/edit path (`roundtrip`,
+`graph`, `graph_edit`, `composite`, `op`, `lut`, `clip_rate`, `equalizer`,
+`markers`, `three_point`, `track_ops`, `blend_modes`), colour science
+(`colorsci`, `wheels_ui`, `curves`, `histogram`), media/GPU (`gpu_grade`,
+`gpu_select`, `vram_leak`, `sw_decode`, `sw_decode_clip`, `voice_isolation`,
+`transcribe`, `transcript`), and export (`export_sweep`, `scrub_bench`, `edl`,
+`loudness`, `chapters`, `qc`, `autosave`, `queue_policy`, `caption_burn`, the
+VAAPI/QSV/CUDA encode tests, and the `sw_encode_bench`/`*_bench` benchmarks).
+Some notable behaviours:
 
-- `roundtrip` — edit operations + project (de)serialization round-trip.
-  Runs a sector of the engine under ASan. **Known pre-existing failure** —
-  it still SEGFAULTs in a leftover path (it was the oldest test in the repo
-  and predates the current timeline model; see CURRENT-STATE.md).
+- `roundtrip` — edit operations + project (de)serialization round-trip, plus
+  the UTF-8/NaN-repair save edges. It is the oldest test in the repo and now
+  passes against the current timeline model.
 - `export_sweep` — exports every valid codec × container combo into
   `/tmp/canvas_export_sweep/`. Returns 2 (SKIP) if `libx264` isn't available,
   which CTest reports as a normal skip.
-- `scrub_bench` — a benchmark of the video decoder's seek/decode fast path;
-  numbers are informational, not pass/fail.
+- `scrub_bench` — benchmarks the decoder's seek/decode fast path against a
+  **calibrated p95 latency budget** (pass/fail) and reports the measured
+  numbers; it skips if the synthetic clip's decoder can't open.
+- The device-bound tests (`vaapi_enc`, `vaapi_enc_bench`, `cuda_enc`,
+  `cuda_enc_bench`, `vram_leak`) skip cleanly (exit 2) when no working
+  device/encoder is present.
 
-**GUI headless tests** (`gui/tests/`) — pure-logic modules extracted from the
-GUI so they can be tested with **no Qt linked and no display**. The CMake
-function `canvas_add_headless_test` is what keeps them honest: it compiles the
-exact production source into the test binary, so a stray Qt include fails the
-build:
+**GUI headless tests** (`gui/tests/`, 14 tests) — pure-logic modules extracted
+from the GUI so they can be tested with **no Qt linked and no display**. The
+CMake function `canvas_add_headless_test` is what keeps them honest: it
+compiles the exact production source into the test binary, so a stray Qt
+include fails the build:
 
 - `sync_constants_test` — shared constant definitions
 - `timeline_decoder_test` — playback frame lookup/decoding
+- `transition_bake_test` — transition bake math
 - `audio_pipeline_test` — audio pipeline state machine (incl. resync fixes)
 - `sonicsync_test` — A/V sync logic
 - `av_reanchor_test` — the MLT "audio rides with its frame" invariant
 - `timeline_snap_test` — zoom-dependent snap quantization math
 - `timeline_selection_test` — selection model + linked-mate coalescing
 - `timeline_drag_test` — drag-session math, snap-aware, release decisions
+- `transition_handle_editor_test` — transition-handle drag session
+- `audio_targets_test` — selection → audio-clip target resolution
+- `timeline_volume_line_test` — volume-line dB↔y laws
+- `deliver_settings_model_test` — codec/container list model
+- `source_preview_model_test` — single-clip source-preview project
+
+**GUI Qt-linked tests** (`gui/tests/qt/`, 6 tests) — run offscreen
+(`QT_QPA_PLATFORM=offscreen`) with a real widget stack:
+`volume_line_drag_qt_test`, `waveform_placement_qt_test`,
+`thumbs_id_namespace_test`, `thumbs_disk_serve_test`,
+`wheel_panel_roundtrip_qt_test`, `theme_roundtrip_qt_test`.
+
+**Vulkan tests** (`Vulkan-tests/`, 10 tests) — built only when Vulkan headers
+are found; skipped at runtime without a Vulkan device. Two of them,
+`scrub_bench_vulkan_test` and `visual_render_parity_test`, are still WIP stubs
+that SKIP-as-fail (owned by the Vulkan render-kernel work) — treat them as
+disabled, not as regressions.
 
 ## Launching and what to expect
 
@@ -149,6 +197,6 @@ fails on CUDA, that flag is the fix.
 present at configure time (both are optional). Video playback and export
 still work.
 
-**Stale app in menus?** After the rename to Nova Canvas Studio, an earlier
+**Stale app in menus?** After the rename to Novara Canvas Studio, an earlier
 system install may leave an old "Event Horizon" menu entry. `just uninstall`
 now removes both the new and the legacy artifacts.

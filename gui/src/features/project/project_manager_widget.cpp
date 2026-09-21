@@ -475,7 +475,7 @@ void ProjectManagerWidget::set_card_thumbnail(int token, const QImage& image) {
 
 ProjectManagerWindow::ProjectManagerWindow(QWidget* parent) : QDialog(parent) {
     setObjectName(QStringLiteral("projectManagerWindow"));
-    setWindowTitle(tr("Nova Canvas Studio — Project Manager"));
+    setWindowTitle(tr("Novara Canvas Studio — Project Manager"));
     setWindowIcon(raw_icon("app_icon"));
     setMinimumSize(760, 520);
     resize(1160, 700);

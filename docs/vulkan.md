@@ -1,6 +1,6 @@
 # Vulkan Backend — Full Research & Design Plan
 
-> Research doc + design plan for adding a second GPU backend to Nova Canvas Studio,
+> Research doc + design plan for adding a second GPU backend to Novara Canvas Studio,
 > everything the current stack does today re-done in **Vulkan** — decode, composite,
 > colorspace conversion, resize, encode, and on-screen playback — including
 > **Vulkan Video decode and encode**. Written 2026-09-11 from web research only
@@ -17,7 +17,7 @@
 | Can we encode with Vulkan? | **Yes, with maturity caveats.** `VK_KHR_video_encode_queue` + `h264_vulkan`/`hevc_vulkan` (FFmpeg 7.1+) and `av1_vulkan` (FFmpeg 8.0) work on NVIDIA, RADV (since Mesa 24.1), and ANV (re-enabled Mesa 26.2; AV1 encode Mesa 26.3-devel). Driver ecosystem is younger than decode — see §6 war stories (Intel disabled-not-re-enabled saga, NVIDIA artifact bugs, a desktop-streaming project calling encode "premature" in Feb 2026). |
 | Can we keep the pipeline on-GPU end to end? | **Yes — that is the point of the API.** Decode output images can feed graphics/compute directly (sampling an NV12/P010 multi-planar image needs only `VK_KHR_sampler_ycbcr_conversion`, core since Vulkan 1.1), and `VkVideoProfileListInfoKHR` explicitly supports decode-output-as-encode-input so a decode→composite→encode transcode stays zero-copy on one device. FFmpeg 8.x even ships Vulkan-compute codecs (FFv1, ProRes) as a second, hardware-optional path. |
 | What about the viewer? | Qt gives two routes: `QVulkanWindow` embedded via `QWidget::createWindowContainer()`, or the modern `QRhiWidget` (Qt 6.7+, the portable equivalent of `QOpenGLWidget`, Vulkan-backed via QRhi with `beginExternal()`/`QRhiTexture::createFrom()` for raw-Vulkan interop). `QRhiWidget` is the recommended route. |
-| Biggest risks | Encoder driver maturity (vendor-specific): the 🖥 Intel ANV encode train-wreck (disabled Feb 2026, re-enabled Jul 2026, AV1 Aug 2026), NVIDIA H.264 **decode** artifacts (fixed ≈end Oct 2026), `VK_ERROR_DEVICE_LOST` on H.265 seek on some Intel iGPUs, and old-GCN AMD being slower under Vulkan than VAAPI. Mitigations designed in (§12): probing, driver-version gates, CPU/VAAPI fallback ladder, and the existing `vram_leak`-style regression gates. |
+| Biggest risks | Encoder driver maturity (vendor-specific): the Intel ANV encode train-wreck (disabled Feb 2026, re-enabled Jul 2026, AV1 Aug 2026), NVIDIA H.264 **decode** artifacts (fixed ≈end Oct 2026), `VK_ERROR_DEVICE_LOST` on H.265 seek on some Intel iGPUs, and old-GCN AMD being slower under Vulkan than VAAPI. Mitigations designed in (§12): probing, driver-version gates, CPU/VAAPI fallback ladder, and the existing `vram_leak`-style regression gates. |
 
 **Bottom line:** Vulkan is a credible second backend *now* for decode + composite + present and a
 *young-but-usable* backend for encode. Treat encode as "adopt after a per-GPU validation gate",
@@ -25,14 +25,14 @@ not "available on this machine today by default".
 
 ---
 
-## 2. What Nova Canvas has today (the surface we mirror in Vulkan)
+## 2. What Novara Canvas has today (the surface we mirror in Vulkan)
 
 Current GPU surface, per `AGENTS.md`/docs (source truth — see the repo files for exact wiring):
 
 1. **HW device probe** — `HwDeviceManager` probes `cuda → vaapi → qsv → vulkan` once, falls back to software. (It already mentions vulkan as a *device*, i.e. the FFmpeg vulkan context, but nothing uses a Vulkan graphics path.)
 2. **Decode** — `VideoDecoder` (FFmpeg): HW decode shared-device, CPU RGBA via swscale, **low-res preview cap** (`kPreviewMaxDim` = 640), keyframe-seek vs sequential-forward heuristics. `TimelineDecoder` owns per-media `VideoDecoder`+`FrameCache` slots, a low-res scrub-preview LRU, and the shared `HwDeviceManager`.
 3. **GPU fast path** — `frame_gpu` in `renderer.cpp`: single-clip compositing → NV12 → NVENC via CUDA kernels `rgbaToNV12` + `nv12Resize` (`core/src/gpu/cuda_convert.cu`, guarded by `CANVAS_HAVE_CUDA` / `cuda_available()`).
-4. **Colorspace law** — `core/include/canvas/core/gpu/colorspace.hpp`: BT.601 `yuv_to_rgb`/`rgb_to_yuv`, single source of truth for the viewer's CPU fallback and the CUDA kernel contract.
+4. **Colorspace law** — `core/include/canvas/core/gpu/colorspace.hpp`: BT.709 limited-range `yuv_to_rgb`/`rgb_to_yuv` (the `bt601` names are aliases), single source of truth for the viewer's CPU fallback and the CUDA kernel contract.
 5. **Composite** — `RenderSession::render_video_frame` / `render_audio_chunk` (top-down compositing; per-clip volume/pan/transform/blend/opacity; transitions).
 6. **Viewer** — `ViewerGL` (`QOpenGLWidget`) with a transition shader, GPU fast path.
 7. **Export** — `exporter.cpp`: NVENC/VAAPI/QSV hw encoders + CPU fallback, SFE + NVENC level stamping, progress/cancel; `list_video_codecs/list_containers/list_audio_codecs/available_hw_devices`.
@@ -193,11 +193,11 @@ Sampling multi-planar decode output in a shader:
 // at image allocation time:
 VkImageViewCreateInfo  viewInfo;   // format = NV12 multi-planar, with
 viewInfo.pNext = &ycbcrCreateInfo; // VkSamplerYcbcrConversionCreateInfoKHR
-//                       (colorModel=GPU/YCBCR_601 for BT.601, rgbRange, etc.)
+//                       (colorModel=GPU/YCBCR_709 for BT.709, rgbRange, etc.)
 ```
 …then bind `VkSamplerYcbcrConversion` into the pipeline and sample
 `vec3 sampleYuv(texture, uv)` — the hardware/YUV planes are coalesced into an RGB sample
-using the matrix you configured. `colorspace.hpp`'s BT.601 law becomes the matrix
+using the matrix you configured. `colorspace.hpp`'s BT.709 law becomes the matrix
 coefficients passed in, so playback/export/Inspector never drift (same rule as `audio_mix`).
 
 > Note: for the CUDA path we deliberately *don't* do this — `nv12Resize`
@@ -331,21 +331,21 @@ news, the mpv Vulkan-Video FAQ, and vendor forums. Treat as a point-in-time snap
 
 | Vendor / driver | H.264 | H.265 | AV1 | VP9 | Notes |
 |---|---|---|---|---|---|
-| **Intel ANV** (Mesa) | ✔ (Mesa 23.2+) | ✔ | ✔ | ✔ | Seek/skip on H.265 reported `VK_ERROR_DEVICE_LOST` on some iGPUs (i3-1215U, Jul 2025; Ice Lake-era Feb 2026); H.265 pegged 3D engine 100% on some builds. |
-| **AMD RADV** (Mesa) | ✔ | ✔ | ✔ | ✔ (MR !35398) | Default-on for RDNA3/VCN4+ since Mesa 24.1 (RDNA 24.1 patch). **Older GCN needs `RADV_EXPERIMENTAL=video_decode`** (replaces `RADV_PERFTEST`, Mesa MR !40646); Polaris/Vega/Fiji hit-or-miss (Polaris →5× slower than VAAPI, Jan 2026 report; artifacts fixed ~2025). Stoney GCN-3 crashes (`UVD` deprecated). |
-| **NVIDIA proprietary** | ✔ | ✔ | ✔ (>550.54.14) | ✔ (≥580.xx) | **H.264 decode artifact bug on Linux** (all H.264, see war stories) — fix ≈end Oct 2026. 50-series device-lost issues until 580.76.05 (Aug 2025). Linux only via proprietary driver; no VAAPI. |
-| **NVIDIA NVK** (open) | ✔ (H.264 only) | in progress (GSP wedge) | — | — | Linux 7.3 Nouveau patch + Mesa; merged for **Mesa 26.3**, Turing+ only. |
-| AMDVLK | ✖ | ✖ | ✖ | ✖ | Not supported. |
-| Intel Windows / AMD Windows | under-tested | ✔ (RDNA1–3) | — | — | AMD Windows decode from 22.11.2 specials → 23.9.3+ stable. |
+| **Intel ANV** (Mesa) | Yes (Mesa 23.2+) | Yes | Yes | Yes | Seek/skip on H.265 reported `VK_ERROR_DEVICE_LOST` on some iGPUs (i3-1215U, Jul 2025; Ice Lake-era Feb 2026); H.265 pegged 3D engine 100% on some builds. |
+| **AMD RADV** (Mesa) | Yes | Yes | Yes | Yes (MR !35398) | Default-on for RDNA3/VCN4+ since Mesa 24.1 (RDNA 24.1 patch). **Older GCN needs `RADV_EXPERIMENTAL=video_decode`** (replaces `RADV_PERFTEST`, Mesa MR !40646); Polaris/Vega/Fiji hit-or-miss (Polaris →5× slower than VAAPI, Jan 2026 report; artifacts fixed ~2025). Stoney GCN-3 crashes (`UVD` deprecated). |
+| **NVIDIA proprietary** | Yes | Yes | Yes (>550.54.14) | Yes (≥580.xx) | **H.264 decode artifact bug on Linux** (all H.264, see war stories) — fix ≈end Oct 2026. 50-series device-lost issues until 580.76.05 (Aug 2025). Linux only via proprietary driver; no VAAPI. |
+| **NVIDIA NVK** (open) | Yes (H.264 only) | in progress (GSP wedge) | — | — | Linux 7.3 Nouveau patch + Mesa; merged for **Mesa 26.3**, Turing+ only. |
+| AMDVLK | No | No | No | No | Not supported. |
+| Intel Windows / AMD Windows | under-tested | Yes (RDNA1–3) | — | — | AMD Windows decode from 22.11.2 specials → 23.9.3+ stable. |
 
 ### Encode
 
 | Vendor / driver | H.264 | H.265 | AV1 | Status / caveats |
 |---|---|---|---|---|
-| **NVIDIA proprietary** | ✔ (Win 538.09 / Linux 535.43.22+) | ✔ | ✔ (Win 553.40+) | Most mature. Blackwell **AV1 encode corruption** report May 2026 (unresolved, single report). |
-| **AMD RADV** | ✔ (Mesa 24.1.0) | ✔ (Mesa 24.1.0) | ✔ (Mesa 25.2) | Default-on since Mesa 24.1 ships with `video_encode` too; oldest wide driver support after NVIDIA. |
-| **Intel ANV** | ✔ (Mesa 24.3) | ✔ (Mesa 24.3) | ✔ (Mesa 26.3-devel, DG2) | **Roller-coaster:** disabled Feb 2026 for Gen12.5+ (untested), re-enabled Jul 2026 (Mesa 26.2, Arc A750-tested, H.265 10-bit added Jul 2026), AV1 encode Aug 2026 (Mesa 26.3-devel; 10-bit/loop-filter/CDEF left TODO). |
-| AMDVLK | ✖ | ✖ | ✖ | — |
+| **NVIDIA proprietary** | Yes (Win 538.09 / Linux 535.43.22+) | Yes | Yes (Win 553.40+) | Most mature. Blackwell **AV1 encode corruption** report May 2026 (unresolved, single report). |
+| **AMD RADV** | Yes (Mesa 24.1.0) | Yes (Mesa 24.1.0) | Yes (Mesa 25.2) | Default-on since Mesa 24.1 ships with `video_encode` too; oldest wide driver support after NVIDIA. |
+| **Intel ANV** | Yes (Mesa 24.3) | Yes (Mesa 24.3) | Yes (Mesa 26.3-devel, DG2) | **Roller-coaster:** disabled Feb 2026 for Gen12.5+ (untested), re-enabled Jul 2026 (Mesa 26.2, Arc A750-tested, H.265 10-bit added Jul 2026), AV1 encode Aug 2026 (Mesa 26.3-devel; 10-bit/loop-filter/CDEF left TODO). |
+| AMDVLK | No | No | No | — |
 
 ### Encode perf reality (Phoronix, 2026-08-17)
 
@@ -440,7 +440,7 @@ from `ViewerGL`. Keep `ViewerGL` as the default GL path; make the renderer selec
 |---|---|
 | `HwDeviceManager` cuda→vaapi→qsv→vulkan | keep; add a real Vulkan branch in the probe order; select physical device by video-capable queue |
 | NVDEC/VAAPI/QSV HW decode | `VK_KHR_video_decode_{h264,h265,av1,vp9}` via `h264_vulkan` etc. on our device; VC1/MPEG2/VP8 left on old APIs |
-| swscale → CPU RGBA (viewer strip) | sample the multi-planar image with `sampler_ycbcr_conversion` (BT.601 matrix from `colorspace.hpp`) — no RGBA pass |
+| swscale → CPU RGBA (viewer strip) | sample the multi-planar image with `sampler_ycbcr_conversion` (BT.709 matrix from `colorspace.hpp`) — no RGBA pass |
 | `kPreviewMaxDim`(640) low-res strip | encode a small `codedExtent` in the session, or `scale_vulkan` pass |
 | `rgbaToNV12`/`nv12Resize` CUDA | executability compute passes w/ identical laws (`colorspace.hpp`, `visual.hpp`), pinned by a `gpu_grade`-style host mirror |
 | `RenderSession` compositing | graphics/compute pass: top-down SrcOver (`co = Cs·αs + Cb·αb·(1−αs)` from video.md), transform/blend/opacity/rotation laws |
@@ -526,8 +526,8 @@ We keep today's CUDA NV12 path fully; the Vulkan backend is strictly additional.
 
 ## 10. Migration plan
 
-Phases keep each step independently testable and revertible, in the style of the
-`splitplan.md` phases. **Nothing is behaviour-changed until P-B.**
+Phases keep each step independently testable and revertible, in the stepwise style of
+the repo's `roadmap.md` phases. **Nothing is behaviour-changed until P-B.**
 
 - **P-A — Runtime & probe.** `core/src/gpu/vulkan/vk_context.*`; `vk_video_available()`,
   physical-device/queue-family report, headless selftest (a `vulkaninfo`-like dump of
@@ -716,7 +716,7 @@ something in Part I, it says so.
 - AV1: `vulkan_av1.c` CPU-parses into `StdVideoAV1SequenceHeader` + per-frame
   `StdVideoAV1*`; refs resolved purely through `ref_frame_idx`/`OrderHint` (no stream
   SPS/PPS redundancy after init); primary keys synthesized by the driver.
-- **Consequence for Nova:** the "CPU parse + GPU decode" hybrid is what every production
+- **Consequence for Novara:** the "CPU parse + GPU decode" hybrid is what every production
   consumer (mpv, FFmpeg, GStreamer) ships today. We do NOT need a raw `VkVideoSession`
   orchestrator for parity — restoring `make_black_frame`/hold semantics on a failed query
   (R6) is the only piece the API doesn't hand us.
@@ -737,7 +737,7 @@ something in Part I, it says so.
   queue family must support transfer).
 - Concurrency = `queueCount` sessions; reuse one session per media slot, drop/recreate
   on seek boundaries the way our `VideoDecoder` already drops on discontinuity.
-- **Consequence for Nova:** our locked shared-device strategy (one `VkDevice` incl.
+- **Consequence for Novara:** our locked shared-device strategy (one `VkDevice` incl.
   video families, handed to FFmpeg) is exactly mpv's proven shape. Copy `hwdec_vulkan.c`
   as the reference for `AVVulkanDeviceContext.qf[]` population.
 
@@ -749,7 +749,7 @@ something in Part I, it says so.
   global ycbcr support; **dropped from this doc as unverifiable** — 404 across all
   sources).
 - ycbcr sampling modes (`VkSamplerYcbcrModelConversion`/`VkSamplerYcbcrRange`) are
-  **no replacement for `colorspace.hpp`'s BT.601 law**: fixed-function sampling converts
+  **no replacement for `colorspace.hpp`'s BT.709 law**: fixed-function sampling converts
   to RGB with the *format's* recovery matrix — we need debug/parity tests to prove that
   a fixed-function `RANGE_FULL`/`RANGE_REDUCTION` pathway equals `yuv_to_rgb`, and the
   byte-exact route in §7.2/P-D is an **own shader**, not the fixed-function path.
@@ -759,7 +759,7 @@ something in Part I, it says so.
   driver default MIDPOINT. FFmpeg does **not** set `VkSamplerYcbcrConversionCreateInfo
   .chromaOffset` from the bitstream today — it keys off the *subsampling* of the AV
   pixel format (`ff_vk_subsampling_from_av_desc`) and leaves siting default.
-- **Consequence for Nova:** keep 4:2:0 (NV12) from decode through composite to encode;
+- **Consequence for Novara:** keep 4:2:0 (NV12) from decode through composite to encode;
   do RGB conversion ourselves (parity with `colorspace.hpp`), and treat any
   fixed-function ycbcr path as *preview-only*. Filmstrip/thumbnail decode should stay on
   the existing CPU path (or a Vulkan RGBA path) so thumbnail colors never drift from
@@ -770,7 +770,7 @@ something in Part I, it says so.
 - `VkVideoSessionCreateInfoKHR`: `queueFamilyIndex`; `VK_VIDEO_SESSION_CREATE_INLINE_SESSION_PARAMETERS_BIT_KHR` needs **maintenance2**; `VK_VIDEO_SESSION_CREATE_INLINE_QUERIES_BIT_KHR` needs **maintenance1**; `pictureFormat`/`referencePictureFormat` are format *lists* (choose the superset); `maxCodedExtent` must sit within `[minCodedExtentSize, maxCodedExtentSize]`; `maxDpbSlots`/`maxActiveReferencePictures` capped by device props.
 - `vkGetVideoSessionMemoryRequirementsKHR` gives driver-bound layout **for the session's internal context only**. The DPB and the coded pictures are plain images (external-memory capable) that *we* supply as resource handles. So one session per stream costs only driver-context memory — the VBV for a dozen streams is a few images each, not sessions.
 - FFmpeg: `dedicated_dpb` sessions allocate one image per reference; layered DPBs reuse one multi-layer image; AV1 always `dedicated_dpb`. mpv's `vk_decode` opens sessions per boundary/stream and reuses across consecutive frames — our `TimelineDecoder` per-media slot is the same granularity.
-- **Consequence for Nova:** the "session per stream, images shared across sessions/devices" mental model is correct; VRAM accounting = decode formats + composite, session context ≈ negligible.
+- **Consequence for Novara:** the "session per stream, images shared across sessions/devices" mental model is correct; VRAM accounting = decode formats + composite, session context ≈ negligible.
 
 ### R5 — Encoder rate-control (what the API promises vs. what drivers do)
 
@@ -792,7 +792,7 @@ something in Part I, it says so.
   `usage`; `-h` for `h264_vulkan` adds `profile constrained_baseline|main|high|high444p`,
   `level 1..6.2`, `coder cabac`; defaults among safety: `bf=2`, `g=300`, receive-packet
   API (`FF_CODEC_RECEIVE_PACKET_CB`).
-- **Consequence for Nova:** encode gate stays per-driver. `cqp` + `quality` is the
+- **Consequence for Novara:** encode gate stays per-driver. `cqp` + `quality` is the
   internal/editor path (deterministic-ish, fastest to bet); deliverable exports should
   still default to NVENC/VAAPI/software until VK encode parity on the machine's driver is
   demonstrated by the P-E encode→decode→ffprobe round-trip.
@@ -807,7 +807,7 @@ something in Part I, it says so.
 - On a failed decode the output picture is **undefined**; using a DPB slot whose source
   failed is also legal-but-undefined. The spec has **no concealment** — drivers emit
   garbage rather than hold. mpv/FFmpeg today just surface the frame.
-- **Consequence for Nova:** we own error concealment — on ERROR result, hold the last
+- **Consequence for Novara:** we own error concealment — on ERROR result, hold the last
   good frame (immediately seekable, matches `VideoDecoder`'s keyframe-seek + sequential
   heuristics) or push `make_black_frame()`. `vram_leak_vulkan`/`visual_render_parity`
   must exercise a mid-stream corrupt NAL (synthesize a corrupt packet, expect held frame,
@@ -854,7 +854,7 @@ something in Part I, it says so.
   submit-time hazard validator. **There is no `docs/video.md` in VVL** (404 verified via
   GitHub API) — the doc list has no dedicated video page.
 - `VkConformanceVersion` is queried via driver props (mesa: `VK_DRIVER_INFO`/`vkGetPhysicalDeviceFeatures2`), the standard NPOT for driver-quality gating.
-- **Consequence for Nova:** CI matrix = { caval, mustpass subset, decode+encode dump
+- **Consequence for Novara:** CI matrix = { caval, mustpass subset, decode+encode dump
   flags } when a video-capable GPU is present; otherwise skip decode, run encode-only
   against Lavapipe for plumbing smoke (not quality).
 
@@ -878,7 +878,7 @@ something in Part I, it says so.
   `GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR`, clamp
   `quality > maxQualityLevels` w/ warning, `session_create.referencePictureFormat =
   pictureFormat`, then `VkVideoEncodeRateControlInfoKHR` + per-codec structs.
-- **Consequence for Nova (`vulkan.md` §10 P-C):** distro FFmpeg cannot decode
+- **Consequence for Novara (`vulkan.md` §10 P-C):** distro FFmpeg cannot decode
   h264/hevc/av1_vulkan today. Options: (a) self-build FFmpeg with
   `--enable-hwaccels --enable-decoder=h264_vulkan,hevc_vulkan,av1_vulkan` as a build/CI
   provision documented in BUILDING.md; (b) fallback to decode-via-NVENC-adjacent paths.
@@ -932,7 +932,7 @@ something in Part I, it says so.
 | Decode | H.264/H.265/AV1/VP9 default-on for **VCN4+ (RDNA3)** since Mesa 24.1; older GCN via `RADV_EXPERIMENTAL=video_decode`. **Unified RadeonSI+RADV decoder since 26.1** — same engine behind VA-API and Vulkan, legacy UVD/Hawaii included. CTS passes on VCN5 (RDNA4); older gens: Polaris report ≈5× slower than VAAPI (mpv) — probe preferred backend per device. |
 | Encode | H.264/H.265 default-on since 24.1; **AV1 encode merged 25.2**; per-frame bitrate tolerance driver-defined (expect ~5–10%, like NVENC). H.265 min-width CTS skip on VCN5 → wide-GOP exception for narrow proxy resolutions. |
 | Conformance/CI | Passes CTS decode+encode (H.265 encode width-gated); `videoCodecOperations` + `queryResultStatusSupport` probe direct. |
-| Nova gates | Mesa ≥ 26.1 for decode (unified path); ≥ 25.2 for AV1 encode; ≥ 24.1 for H264/H265 encode. RADV is the reference driver for P-D/P-F parity. |
+| Novara gates | Mesa ≥ 26.1 for decode (unified path); ≥ 25.2 for AV1 encode; ≥ 24.1 for H264/H265 encode. RADV is the reference driver for P-D/P-F parity. |
 
 ### Intel (ANV — iGPU + Arc)
 
@@ -941,7 +941,7 @@ something in Part I, it says so.
 | Decode | H.264/H.265/AV1/VP9 since 23.2+; **per-gen carve-outs**: AV1 Gen12 warmup bug → fixed 26.1-devel (Wa_1508208842); H.265 seek `DEVICE_LOST` on some iGPUs as late as Feb 2026; H.264 `DEVICE_LOST` on Ice Lake/Mesa 25.1.9. Arc discrete is the most stable ANV video surface. |
 | Encode | H.264/H.265 unreliably in 24.3, **disabled Feb 2026**, **re-enabled Jul 2026 (Mesa 26.2)** for Gen12.5+ (Arc A750-verified; H.265 10-bit Jul 2026), **AV1 encode DG2 26.3-devel** (10-bit/loop-filter/CDEF TODO). |
 | Conformance/CI | CTS-reported pass on Arc for decode+encode (Vulkanised-2025/Igalia status); VVL + syncval track ANV. |
-| Nova gates | Decode probe checks Mesa ≥ 26.1 for AV1 on Gen12; encode gated ≥ 26.2 (and Arc, not iGPU-first). ANV is the beta-est vendor at encode; keep NVDEC/VAAPI/QSV fallbacks. |
+| Novara gates | Decode probe checks Mesa ≥ 26.1 for AV1 on Gen12; encode gated ≥ 26.2 (and Arc, not iGPU-first). ANV is the beta-est vendor at encode; keep NVDEC/VAAPI/QSV fallbacks. |
 
 ### NVIDIA (proprietary + NVK)
 
@@ -950,7 +950,7 @@ something in Part I, it says so.
 | Decode (proprietary) | H.264/H.265/AV1/VP9 — most mature in Linux VK; **H.264 decode artifact bug on Linux** (fix ≈ Oct 2026); 50-series device-lost until 580.76.05; no VAAPI equivalent, this IS the NVIDIA Linux decode path. |
 | Decode (NVK, open) | **Vulkan Video decode merged for Mesa 26.3**, H.264 first, Turing+; needs **Nouveau/Linux 7.3 NVDEC-channel patch**; `NVK_EXPERIMENTAL=video`. 1.4-conformant on supported GPUs (Kepler→Ada/Blackwell). |
 | Encode | Proprietary: H.264/H.265 (Win 538.09 / Linux 535.43.22+), AV1 (553.40+); NVENC P1–P7 ↔ VK quality levels 1–7. **No NVK encode timeline.** Blackwell AV1 encode corruption (single report, May 2026) — watch. |
-| Nova gates | NVIDIA users run the proprietary driver for VK decode/encode; treat NVK as experimental until 26.3 + Linux 7.3 ship as a stable combo. CUDA path remains the NVIDIA default in Nova (no one equals NVENC today). |
+| Novara gates | NVIDIA users run the proprietary driver for VK decode/encode; treat NVK as experimental until 26.3 + Linux 7.3 ship as a stable combo. CUDA path remains the NVIDIA default in Novara (no one equals NVENC today). |
 
 ## 18. Deltas the deep-dives force on the plan (§10)
 
@@ -1043,7 +1043,7 @@ something in Part I, it says so.
 ## 21. How rounds eleven–twenty ran
 
 R11–R20 went one tier deeper than R1–R10: instead of "what exists", these rounds
-asked "what does the code actually do, and what does a Nova compositor/encoder
+asked "what does the code actually do, and what does a Novara compositor/encoder
 look like once you have a working decode session". Sources were still web +
 authoritative code (`FFmpeg master` fetched as source, Khronos spec pages,
 Vulkan-Guide/Vulkan-Tutorial, VK-GL-CTS README), but now cross-checked against a
@@ -1069,7 +1069,7 @@ present (`hwcontext_vulkan.c`):
   into a `VkImage` created with `VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT`.
 - `VK_EXT_memory_budget` — `VkPhysicalDeviceMemoryBudgetPropertiesEXT`
   `heapBudget`/`heapUsage`: the direct replacement for `cudaMemGetInfo` that the
-  Nova `vram_leak` gate needs. Present on this NVIDIA driver (rev 1).
+  Novara `vram_leak` gate needs. Present on this NVIDIA driver (rev 1).
 - `VK_EXT_external_memory_host`, `VK_KHR_external_semaphore_fd`, `VK_KHR_external_fence_fd`.
 
 What FFmpeg actually does with these (`/tmp/opencode/hwcontext_vulkan.c`):
@@ -1089,7 +1089,7 @@ What FFmpeg actually does with these (`/tmp/opencode/hwcontext_vulkan.c`):
   fence is imported into a **binary** semaphore with
   `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT` so the Vulkan queue orders
   against whoever produced/consumes the buffer.
-- **CUDA interop** (`cuImportExternalMemory`, line 2397) — the current Nova GPU
+- **CUDA interop** (`cuImportExternalMemory`, line 2397) — the current Novara GPU
   path could co-exist with a Vulkan path by importing the same dma-buf; not
   planned, recorded as an escape hatch.
 
@@ -1123,7 +1123,7 @@ comment: "the semaphore stays below this value until submission completes …
 keeping every other user away"); for every image a frame uses it records
 **wait on `sem[i]` @ `sem_value[i]`** and **signal at `sem_value[i]+1`**; after a
 successful `QueueSubmit2` it bumps the CPU mirrors (`*sem_sig_val_dst[i] += 1`,
-`vulkan.c` 1040). Result: a Nova consumer on the graphics queue waits
+`vulkan.c` 1040). Result: a Novara consumer on the graphics queue waits
 `vkWaitSemaphores({sem[i]}, sem_value[i])` (or feeds it into its own
 `VkSubmitInfo2.pWaitSemaphoreInfos`) and is ordered exactly after that frame's
 decode — no fences, no device sync, no bus polling.
@@ -1187,7 +1187,7 @@ Facts that pin the design:
 Consequence, now locked as design:
 - The decode→viewer and decode→export paths both route through **our own Vulkan
   compute compositor** that reads the NV12 planes (`vkCmdDispatch`, per-plane
-  `VK_IMAGE_VIEW_TYPE_2D` luma/chroma plane views, manual BT.601 yuv→rgb — the
+  `VK_IMAGE_VIEW_TYPE_2D` luma/chroma plane views, manual BT.709 yuv→rgb — the
   exact law in `core/include/canvas/core/gpu/colorspace.hpp`, matching what the
   CUDA `nv12GradeResize` kernel does), applies scale/transform/rotation/anchor/
   blend-mode/opacity, and writes **one RGBA image** (present) or the **NV12
@@ -1231,11 +1231,11 @@ From `vulkan_encode.c` / `vulkan_encode_h264.c`:
   (yet):** `VK_KHR_video_encode_intra_refresh` (rev 1) and
   `VK_KHR_video_encode_quantization_map` (rev 2) are *present on this NVIDIA
   driver*, so intra-refresh streaming (every frame a keyframe-candidate) is
-  physically possible — but FFmpeg n9 has no knob, so Nova can't use it through
+  physically possible — but FFmpeg n9 has no knob, so Novara can't use it through
   the encoder without raw `Vk` calls (a P-F spike item, unchanged).
 - Budget: per the Khronos "Vulkan Video core API" deck, a video session may
   need 3–8 input/output images **and 4–16 references = hundreds of MB**, and a
-  single frame's bitstream can exceed 2 MB. The Nova GPU budget must treat the
+  single frame's bitstream can exceed 2 MB. The Novara GPU budget must treat the
   encode path as a ~512 MB allocation class, not a scratch buffer.
 
 ### R16 — Seek / random access (why scrub-forward still works)
@@ -1246,11 +1246,11 @@ From `vulkan_encode.c` / `vulkan_encode_h264.c`:
   isn't around (`vulkan_decode.c` 370–469, invoked at init and on reset
   boundaries).
 - IRAP / keyframe pictures are sync points the driver serves natively; the
-  *Nova* seek heuristic is unchanged from the CPU/CUDA path: on seek, decode to
+  *Novara* seek heuristic is unchanged from the CPU/CUDA path: on seek, decode to
   nearest previous keyframe then step forward (that is what `TimelineDecoder`
   does today via `VideoDecoder::seek_to_frame`). On the Vulkan side a seek is
   `decode_reset` + first keyframe decode — no DPB save/restore, no session
-  teardown. Since Nova keeps **one** shared video session and the scrub-preview
+  teardown. Since Novara keeps **one** shared video session and the scrub-preview
   low-res LRU reuses the same worker, there is exactly one session lifetime to
   manage.
 - The scrub-preview low-res path (kPreviewMaxDim 640) is untouched by the
@@ -1269,7 +1269,7 @@ From `vulkan_encode.c` / `vulkan_encode_h264.c`:
   is >700 MB before debug info.
 - Conformance version is reported per driver via `VkConformanceVersion`
   (`VK_KHR_driver_properties`, core since 1.2) — this RTX 5070 Ti reports
-  **1.4.3.3**. Nova does **not** run CTS in CI (huge, slow, sample-stream
+  **1.4.3.3**. Novara does **not** run CTS in CI (huge, slow, sample-stream
   licensing); it consumes the driver-declared conformanceVersion as a gate and
   optionally runs a handful of `dEQP-VK.video.*` smoke cases on the Mesa side
   during vendor bring-up.
@@ -1286,7 +1286,7 @@ decision wanted is measurable on the reference box to a slightly higher
 fidelity: `fifo_latest_ready`/`present_timing` exist as a lower-latency
 alternative. Under XWayland the Qt app still walks the X11 path; Wayland is
 exercised with `QT_QPA_PLATFORM=wayland`. QRhi remains the swapchain owner, so
-Nova's present work is: keep MAILBOX-less FIFO, keep `present_wait`, and gauge
+Novara's present work is: keep MAILBOX-less FIFO, keep `present_wait`, and gauge
 whether `present_mode_fifo_latest_ready` is worth a QRhi-backing swap later.
 
 ### R19 — Multi-GPU (scope decision confirmed)
@@ -1298,7 +1298,7 @@ whether `present_mode_fifo_latest_ready` is worth a QRhi-backing swap later.
   incomplete multi-planar dma-buf import (`wgpu #10059`, `#9801`) — NV12 into a
   *second* GPU is driver/version-dependent. This is exactly the hybrid-laptop
   case (decode on iGPU, present on dGPU).
-- Nova's decision does not change: **one physical device owns decode +
+- Novara's decision does not change: **one physical device owns decode +
   composite + encode**; only the final RGBA ever crosses to a present device,
   and only the encode-side already-running-experimental plan would even try it.
   Device-group extensions (`VK_KHR_device_group*`) are present but not used.
@@ -1336,7 +1336,7 @@ Smoke tests (ffmpeg n9.0.1, --enable-vulkan):
   -hwaccel vulkan on the h264 file → silently fell back to CPU (no Vulkan decoders in this build)
 ```
 
-So: **encode is proven working right now** on Nova's reference box; decode
+So: **encode is proven working right now** on Novara's reference box; decode
 requires the R1–R10 driver floor (or NVK/Mesa build-out) before a decode smoke
 test can light up here.
 
@@ -1345,9 +1345,9 @@ test can light up here.
 | Area | AMD (RADV) | Intel (ANV) | NVIDIA (this box) |
 |---|---|---|---|
 | External memory | dma-buf + DRM modifiers native | dma-buf + DRM modifiers native | OPAQUE_FD/dma-buf, exposes `image_drm_format_modifier` rev 2 (import semantics unverified — probe before relying) |
-| `memory_budget` | yes | yes | yes (rev 1) ✓ |
+| `memory_budget` | yes | yes | yes (rev 1) |
 | `sampler_ycbcr_conversion` | core-required 1.4 | core-required 1.4 | core-required 1.4, confirmed present |
-| Video maint1+maint2 | maint1+2 (Mesa track) | maint1+2 | **both present** ✓ |
+| Video maint1+maint2 | maint1+2 (Mesa track) | maint1+2 | **both present** |
 | Encode surface | H264/H265/AV1 (H265 verify) | H264/AV1 (Mesa 26.2/26.3) | H264 rev14/H265 rev14/AV1 rev1 — **all smoke-validated here** |
 | Decode surface | H264/H265/AV1/VP9 | H264/H265/AV1 | H264/VP9 + H265/AV1 (rev 1) |
 | Intra refresh / quant-map | see part II floors | see part II floors | **present**, but FFmpeg n9 has no knob (P-F spike) |
@@ -1393,7 +1393,7 @@ test can light up here.
 | R-11 | QRhi cannot sample NV12 (ycbcr immutable samplers absent) | high | Compute-compositor→RGBA is now the locked P-D shape; RGBA hop == today's CUDA hop |
 | R-12 | NVIDIA exposes `image_drm_format_modifier` but import semantics are unverified | med | P-F probe item: import a decoded dma-buf, byte-compare layout from `VkSubresourceLayout2` |
 | R-13 | Decode images must carry `SAMPLED` for composite to avoid a copy | low | Requested via `AV_HWFRAME_MAP_READ` frames-context usage (R13) |
-| R-14 | CTS not runnable in Nova CI; "conformant" must come from the driver | low | Gate on `VkConformanceVersion`; optional dEQP `video.*` spot-checks at vendor bring-up |
+| R-14 | CTS not runnable in Novara CI; "conformant" must come from the driver | low | Gate on `VkConformanceVersion`; optional dEQP `video.*` spot-checks at vendor bring-up |
 | R-15 | Encode sessions are memory-hungry (4–16 refs, >2 MB/frame bitstreams) | med | Part of the ~512 MB Vulkan GPU budget; measure with `memory_budget` heapUsage (R11) |
 | R-16 | One shared video session + single decoder means seek must use `RESET` | low | `decode_reset` proven path (R16); added to P-C |
 | R-17 | Layer ubiquity (MANGOHUD/Steam/OBS/NV_present) skews perf/VRAM numbers locally | low | Strip non-essential layers for perf & `vram_leak` runs (R20 measurement note) |
@@ -1486,7 +1486,7 @@ Three findings re-set expectations early and thread through everything:
    must be proven per driver, never assumed from "spec conformant".
 3. **The largest Linux consumer (Chromium) still has *not shipped* Vulkan Video
    decode** (tracker open since 2024) and the largest FOSS player (VLC) has never used
-   it — reviewer-grade decode is thin, which shapes how Nova should position Vulkan
+   it — reviewer-grade decode is thin, which shapes how Novara should position Vulkan
    vs its existing VA-API path.
 
 ## 28. Driver + ecosystem bug harvest (R21–R30)
@@ -1496,14 +1496,14 @@ Three findings re-set expectations early and thread through everything:
   stack-buffer-overflow in FFmpeg's Vulkan HEVC decoder `vk_hevc_end_frame`
   (`vps_num_hrd_parameters > HEVC_MAX_SUB_LAYERS`, CWE-121, critical,
   remote-triggerable). Affects FFmpeg 8.0–8.1.2; fixed in 8.1.3. → The Vulkan decoder
-  must only ever run on **trusted / self-encoded** media; pin ≥ 8.1.3 in Nova's build.
+  must only ever run on **trusted / self-encoded** media; pin ≥ 8.1.3 in Novara's build.
 - **Distro builds are encode-only.** Measured on this box (n9.0.1, Debian-family):
   `ffmpeg -decoders | grep vulkan` is empty and `-c:v h264_vulkan` as a decoder yields
   `Unknown decoder 'h264_vulkan'`, while `-hwaccels` **does** list `vulkan`. The `D`
   in `-encoders` output (`V....D h264_vulkan`) is the "decode supported" flag on the
   *encoder* descriptor, not a decoder. FFmpeg 8.0 release notes advertise H.264/HEVC/
   AV1 Vulkan decode + VP9 + FFv1/AV1 compute codecs — the feature set exists upstream;
-  Debian/Ubuntu simply don't build the decoders into libavcodec, so **Nova must
+  Debian/Ubuntu simply don't build the decoders into libavcodec, so **Novara must
   self-build with `--enable-vulkan` + the explicit decoders** (§33).
 - FFmpeg issues now live on Forgejo (`code.ffmpeg.org`); `git.ffmpeg.org` is
   Anubis-bot-checked (automated fetches block → use the GitHub mirror).
@@ -1536,7 +1536,7 @@ Three findings re-set expectations early and thread through everything:
   file sorts first; users fix with `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json`
   (the resolution of that same thread). Keep it as a field diagnostics note.
 - Mesa floors (Igalia matrix, §30 source): encode H.264/H.265 24.1.0 (RADV MR), AV1
-  encode 🚧 (not a stable target); decode H.264/H.265 23.1.2, AV1 24.0.3, VP9 25.2.
+  encode WIP (not a stable target); decode H.264/H.265 23.1.2, AV1 24.0.3, VP9 25.2.
 
 ### 28.4 Intel / ANV (R27 + Phoronix 2026-07)
 - **Wa_1508208842:** Gen12 (TGL/DG1/RKL/ADL) needs a "dummy workload" before AV1
@@ -1555,30 +1555,30 @@ Three findings re-set expectations early and thread through everything:
   `VK_KHR_video_*`. PanVK (Mali): none; Android viability contested in community.
   Venus (virtio paravirt): none. Zink: H.264 *decoder* WIP only. NVK: H.264/H.265/AV1
   **decoders** (2025), **no encoders**.
-  → Vulkan Video is a desktop-Linux + Windows story; "all GPU types" for Nova = the
+  → Vulkan Video is a desktop-Linux + Windows story; "all GPU types" for Novara = the
   three desktop IHVs (+ NVK-on-NVIDIA as a future).
 
 ## 29. Client adoption: who actually ships Vulkan Video (R31–R35)
 
 | Client | Decode (h264/h265/av1/vp9) | Encode | Notes |
 |---|---|---|---|
-| **FFmpeg** | ship (6.1/6.1/6.1/8.0), distro-stripped | ship (7.1/7.1/8.0) | the engine Nova reuses (§28.1) |
+| **FFmpeg** | ship (6.1/6.1/6.1/8.0), distro-stripped | ship (7.1/7.1/8.0) | the engine Novara reuses (§28.1) |
 | **GStreamer** | h264+h265 by 1.24; av1+vp9 by **1.28** (Jan 2026) + 10-bit h265 | h264 by 1.28; h265/av1 WIP MR | lags FFmpeg by a full feature generation |
 | **mpv** | FFmpeg-driven; **prefers VA-API over Vulkan by default** (mpv #18043, May 2026) | — | the canonical `-hwdec=vulkan` field guide (mpv FAQ #13909) |
-| **VLC** | **never** — decode stays NVDEC/VA-API/MediaCodec | — | GSoC 2026 = hw-decode→Vulkan-render interop (libplacebo) + external-renderer mode; pattern mirrors Nova's shared-device seam |
+| **VLC** | **never** — decode stays NVDEC/VA-API/MediaCodec | — | GSoC 2026 = hw-decode→Vulkan-render interop (libplacebo) + external-renderer mode; pattern mirrors Novara's shared-device seam |
 | **Chromium/ANGLE** | **not shipped** — bug 324003973 open since Feb 2024 (+43; NVIDIA offered help Nov 2025); Linux decode remains VA-API | — | Khronos v1.0 design doc (Dec 2025) shows the intended shape: Chromium parsers + ~500–700 LOC/codec conversion to StdVideo |
 | **Vulkan-Video-Samples** | all four, via `VK_KHR_sampler_ycbcr_conversion` | h264/h265/av1, "issues such as missing POC numbers and corrupted frames" | the official CTS-encoder-backed library; encode sample self-documents immaturity |
 
-Two structural lessons for Nova:
+Two structural lessons for Novara:
 
 - **The decode contract is confirmed by the Chromium design doc's resource table:**
   VA-API drivers parse SPS/PPS internally; Vulkan Video requires the application (in
-  our case FFmpeg's libavcodec) to hand over parsed StdVideo structs. Nova sits on the
+  our case FFmpeg's libavcodec) to hand over parsed StdVideo structs. Novara sits on the
   FFmpeg side, so that work belongs to FFmpeg — consistent with Part II's "share
-  FFmpeg's decode, write our own compositor" split. Nothing suggests Nova needs to own
+  FFmpeg's decode, write our own compositor" split. Nothing suggests Novara needs to own
   a bitstream parser.
 - **Every serious client treats Vulkan decode as optional-behind-flags or not at all;**
-  the production Linux default is VA-API. Nova should keep VA-API decode working and
+  the production Linux default is VA-API. Novara should keep VA-API decode working and
   treat Vulkan as the zero-copy integration / render & encode path for day one, with
   Vulkan decode enabled when the per-driver probe + the §30 checks pass.
 
@@ -1593,7 +1593,7 @@ Two structural lessons for Nova:
   | AV1 test vectors | 231/242 | n/a | **0/242** |
 
   (Vulkan-Video-Samples runs: NVIDIA h265 141/147, av1 231/242; Intel 40/135 / 81/147
-  / 0/242.) → Nova's decode gate must be **Fluster-class vectors run through FFmpeg,
+  / 0/242.) → Novara's decode gate must be **Fluster-class vectors run through FFmpeg,
   per driver**, not "spec conformant ⇒ correct". Intel 0/242 AV1 is exactly what a
   conformance claim would paper over.
 - **Validation layers lag on video objects:** VVL issue #12151 — Vulkan video decode
@@ -1617,16 +1617,16 @@ by vendor; rate control and quality issues; synchronization: major issues with b
 decoder and encoder." Decode has been stable for years; **encode is where the vendors
 still disagree**, and the evidence stack agrees:
 
-- **No production AV1 encoder on Vulkan anywhere yet.** Igalia 2025: RADV AV1 encode 🚧;
+- **No production AV1 encoder on Vulkan anywhere yet.** Igalia 2025: RADV AV1 encode WIP;
   ANV AV1 encode only just merged (Mesa 26.2, Aug 2026); NVIDIA Blackwell AV1 corrupts
-  with P-frames (§28.2); the official sample is unresolved. Nova should assume
+  with P-frames (§28.2); the official sample is unresolved. Novara should assume
   **H.264 and H.265 encode qualify; AV1 Vulkan encode does not** — fall back to
   NVENC/VA-API/CPU for AV1 from day one.
 - **H.264/H.265 Vulkan encode is the stable floor** (FFmpeg 7.1+, Mesa/NVIDIA/AMD GA),
-  with the standing caveat that quality ≈ vendor rate-control, not x264 — Nova's export
+  with the standing caveat that quality ≈ vendor rate-control, not x264 — Novara's export
   presets must own targets/rates/QP, and "GPU-native" ≠ "visually identical".
   Conformance is decode-side; encode is judged by decode-ability + metrics, which is
-  what Nova's export round-trip tests already do.
+  what Novara's export round-trip tests already do.
 - **10-bit:** decode is universal; **10-bit *encode*** is the drift point — ANV only
   got H.265 10-bit in Mesa 26.2 (Jul 2026), and AV1 10-bit encode is driver-dependent.
   Keep 10-bit encode an opt-in probed per driver extension list, not a menu entry.
@@ -1649,7 +1649,7 @@ codecs:
 - **Subtitles / CEA / ancillary data:** entirely outside Vulkan Video; stays in
   FFmpeg-domain (containers/captions untouched by the Vulkan path).
 - **Protected content:** possible via protected buffers (Chromium's design doc calls
-  the Vulkan flow *simpler* than VA-API's decrypt-during-decode) — Nova has no DRM
+  the Vulkan flow *simpler* than VA-API's decrypt-during-decode) — Novara has no DRM
   scope, so this is informational only.
 - **Encoders offer no rate-distortion estimation and no bitstream-format writing:** the
   caller owns RC config and the AVCC header/SEI composition (via FFmpeg) — exactly the
@@ -1657,17 +1657,17 @@ codecs:
 
 Platform matrix ("all GPU types", with the driver maturity from §28 in play):
 
-- **Linux desktop (Nova's target):** proprietary NVIDIA (full matrix, §28.2 caveats),
+- **Linux desktop (Novara's target):** proprietary NVIDIA (full matrix, §28.2 caveats),
   RADV/ANV (decode solid, encode ≥ Mesa 26.2 for Intel), NVK (decode only). Linux =
   the only fully-open stack.
 - **Windows:** all three IHVs ship decode + encode (Igalia floor table); Chromium-class
-  consumers are flag-gated. Informational only for Nova.
+  consumers are flag-gated. Informational only for Novara.
 - **Android / mobile / ARM:** MediaCodec owns the pipeline; Turnip/PanVK/Venus have no
-  Vulkan Video (R29). Not a Nova target.
+  Vulkan Video (R29). Not a Novara target.
 - **macOS / iOS:** no Vulkan at all (Metal); MoltenVK has no video support.
 - **Licensing:** the extensions and StdVideo headers are Khronos-licensed like the rest
   of Vulkan; no patent obligations beyond the codec pools the caller already deals with
-  (H.264/HEVC/AV1 are codec-level, orthogonal to the API). No action for Nova.
+  (H.264/HEVC/AV1 are codec-level, orthogonal to the API). No action for Novara.
 
 ## 33. Deltas to the plan + risk-register additions (R21–R50)
 
@@ -1680,7 +1680,7 @@ Deltas that change the Part III plan:
    P-frame corruption, + ANV only just merged). GPU AV1 export falls back to NVENC /
    VA-API / CPU. H.264/H.265 Vulkan encode stays the qualified path, probed per driver.
 3. **Move "keep VA-API decode functional" from a nice-to-have to a hard requirement for
-   the Vulkan phase** — every serious client, and Nova's own dev box, needs it as the
+   the Vulkan phase** — every serious client, and Novara's own dev box, needs it as the
    correctness baseline while Vulkan decode earns per-driver trust.
 4. **Fluster-class per-driver decode vectors belong in CI** (via FFmpeg, mirroring the
    2025 per-driver scores in §30) — spec claims are not enough; Intel's 0/242 AV1 and
@@ -1750,9 +1750,16 @@ New risk-register rows (append to §12 and Part III's §25 table):
 # PART V — The phases (working plan; P-A..P-G expanded, deltas folded in)
 
 This is the *executing* plan. §10 defined P-A..P-G in one line each; §18, §24 and §33
-carried the deltas. This part consolidates all of it into the phase shape Nova actually
+carried the deltas. This part consolidates all of it into the phase shape Novara actually
 builds by: **objective → tasks → tests → exit gate → driver floors**. Every phase keeps
 the CPU/VA-API/GL parity path running — Vulkan is additive until P-G flips the default.
+
+**Current state (2026-09-17).** Only **Phase 0** has landed: `Vulkan-tests/` exists with
+its 10-test suite (8 real + the 2 SKIP-as-fail WIP stubs `scrub_bench_vulkan_test`/P-C and
+`visual_render_parity_test`/P-D). **P-A..P-G are not implemented** — there is no
+`core/src/gpu/vulkan/` runtime, no `ViewerVk`, and no Vulkan decode/composite/encode path
+in the app. The per-phase text below is the plan each phase is built against, not a report
+of finished work; where a phase has moved, its status is called out inline.
 
 **Ground rules carried from Parts I–IV into every phase below:**
 - Shared-device strategy is locked: one `VkInstance`/`VkDevice`; graphics, compute,
@@ -1777,6 +1784,13 @@ the CPU/VA-API/GL parity path running — Vulkan is additive until P-G flips the
 > single test we have with Vulkan if it's OpenGL, and build and test everything before
 > we start Phase 1 (P-A).* Everything in P-A..P-G lands on top of a suite that already
 > proves the backend — so the harness and the parity tests exist *before* the code does.
+
+**Status (2026-09-17): landed.** `Vulkan-tests/` is present at the repo root, wired as its
+own CMake tree gated on `find_package(Vulkan QUIET)`, and registers 10 tests: 8 real
+(`vk_probe_test`, `gpu_grade_vulkan_test`, `queue_matrix_test`, `video_profiles_test`,
+`formats_test`, `interop_contract_test`, `vram_leak_vulkan_test`, `export_sweep_vulkan_test`)
+plus the 2 SKIP-as-fail WIP stubs (`scrub_bench_vulkan_test` → P-C,
+`visual_render_parity_test` → P-D), which `return 2` until their owning phase lands.
 
 **Objective.** Stand up the Vulkan test suite *first*. Every existing test that touches a
 GPU/GL path gets a Vulkan reading run on the same input through the same law; every
@@ -1831,9 +1845,12 @@ targets keep the no-Qt link rule and `check_qtdep.sh` coverage.
 **Exit gate (Phase 0 complete).** All of: (a) `Vulkan-tests/` exists with a passing
 probe/selftest; (b) every GPU/GL test named in task 2 has a `_vulkan` reading — passing or
 SKIP-by-probe, never absent; (c) `cmake --build build -j` (Debug and Release and
-`build-release/`) is **warning-free on all targets**; (d) `ctest --test-dir build` =
-35/35 (or 35/35 with only the documented `equalizer` WIP red) **plus** the Vulkan group;
-(e) `./scripts/check_qtdep.sh` passes. No P-A work is merged until (a)–(e).
+`build-release/`) is **warning-free on all targets** (since Phase 0, `-Werror` has also
+landed on `canvas_core` as a PUBLIC option, so it propagates to every Vulkan target — see
+P-G); (d) `ctest --test-dir build` runs the full suite green-or-SKIP — 77 tests as of
+2026-09-17 (75 pass; the 2 Vulkan SKIP-as-fail stubs above are not regressions), of which
+the Vulkan group is the last 10; (e) `./scripts/check_qtdep.sh` passes. No P-A work is
+merged until (a)–(e).
 
 **Driver floors for Phase 0:** none beyond "Vulkan 1.3-capable driver present"; each
 mirrored test self-gates on its own capability (SKIP without the codec op or
@@ -1846,6 +1863,10 @@ mirrored test self-gates on its own capability (SKIP without the codec op or
 **Objective.** A deliberate, non-intrusive Vulkan runtime: context creation, physical-device
 + queue-family inventory, and a headless selftest. No app behaviour change (§10).
 
+**Status (2026-09-17): not started.** `core/src/gpu/vulkan/` does not exist yet
+(`core/src/gpu/` holds only `cuda_convert.cu`); the Phase 0 probe is its own
+`Vulkan-tests/common/vk_probe.*` harness, not this runtime.
+
 **Tasks**
 - `core/src/gpu/vulkan/vk_context.*`; `vk_video_available()` entry point.
 - Physical-device report: queue families + `videoCodecOperations`, conformance version,
@@ -1857,8 +1878,9 @@ mirrored test self-gates on its own capability (SKIP without the codec op or
 - The "RTX 5070 Ti = encode-OK / decode-needs-floor" short-circuit lives here (Phase 0
   probe output consumed by the runtime, §18 P-A).
 
-**Tests.** `vk_probe_test` (Phase 0) now runs against the real `vk_context`; `gpu_grade_vulkan`
-host-mirror sanity already passes (proves the compute path in-process).
+**Tests.** `vk_probe_test` (Phase 0) will then run against the real `vk_context` — today it
+is a self-contained probe — and `gpu_grade_vulkan_test`'s host-mirror sanity already passes
+(proves the compute law in-process).
 
 **Exit gate.** `vk_probe_test` + `gpu_grade_vulkan` green; `vulkaninfo`-equivalent dump
 recorded for the reference box; no app code path changed; `check_qtdep.sh` + full prior
@@ -1898,6 +1920,9 @@ scrub sequence and a crossfade; parity test green; GL viewer still default.
 **Objective.** `TimelineDecoder` gains a Vulkan decode path using **self-built FFmpeg**
 (`h264/hevc/av1/vp9_vulkan`) on the shared device (§18, §33.5).
 
+**Status (2026-09-17): not started.** `scrub_bench_vulkan_test` is still the SKIP-as-fail
+stub that names this phase; the real Vulkan decode path is unimplemented.
+
 **Tasks** (spec-level resolution from R12/R13/R16, §24 P-C)
 - Request decode images with `SAMPLED` via the `AV_HWFRAME_MAP_READ`-derived frames-
   context usage (R13) so composite reads in place (no copy).
@@ -1936,6 +1961,9 @@ if present.
 **Objective.** The compute compositor: multi-planar (NV12) sampling + scale + per-clip
 transform/blend/opacity + SrcOver, a `frame_gpu` mirror (R14, §24 P-D).
 
+**Status (2026-09-17): not started.** `visual_render_parity_test` is still the SKIP-as-fail
+stub that names this phase; `gpu_grade_vulkan_test` currently pins the law host-side only.
+
 **Tasks**
 - **Compute-compositor → RGBA → fragment-sample** is the locked shape: QRhi cannot do
   immutable-ycbcr samplers, so NVIDIA/AMD NV12 stays in compute until RGBA (R14 §24).
@@ -1962,6 +1990,11 @@ no present-path copy regressions.
 
 **Objective.** `av1_vulkan`/`hevc_vulkan`/`h264_vulkan` registered behind the probe;
 RGB→NV12 kernel parity with `rgbaToNV12`; `export_sweep` extended (§10).
+
+**Status (2026-09-17): not started (capability probe only).**
+`export_sweep_vulkan_test` currently asserts the FFmpeg Vulkan encoders and
+`list_video_codecs("vulkan")` are present on a capable host — not that the app encodes via
+Vulkan.
 
 **Tasks** (§18 P-E, §24 P-E, R15)
 - Encoder input = the compositor's NV12 image, CONCURRENT to the encode family.
@@ -2024,8 +2057,10 @@ floor for the output codec).
 **Objective.** Make the Vulkan path the safe default or a documented opt-in, fully gated.
 
 **Tasks**
-- Manual zero-warning discipline on **all** Vulkan targets (Debug, Release, `build-release/`);
-  optionally promote `-Werror` once Phase 38 of `splitplan.md` lands (§10 P-G).
+- Zero-warning discipline on **all** Vulkan targets (Debug, Release, `build-release/`).
+  `-Werror` has since landed on `canvas_core` as a **PUBLIC** option, so it already
+  propagates to every Vulkan target — a warning is a hard failure, not a discipline to
+  maintain by hand (§10 P-G).
 - `check_qtdep.sh` coverage for every new headless module in `core/src/gpu/vulkan/` and
   `Vulkan-tests/`.
 - Per-driver test-matrix gates (`driver-matrix gating` from §11) — encode skips below its
@@ -2037,9 +2072,10 @@ floor for the output codec).
 - Rollout: optional `CANVAS_VULKAN` default-on or env/CLI toggle (SOC util? explicit
   flag) so the switch is reversible per machine (§10 P-G).
 
-**Tests.** Full `ctest` (35 + Vulkan group) on all three build flavours; CI driver-matrix
-run; a manual smoke card: open a 2K H.264 project, scrub, crossfade, export H.265 — all
-Vulkan — and eyeball vs the VA-API default.
+**Tests.** Full `ctest` on all three build flavours — 77 tests as of 2026-09-17 (75 pass;
+the 2 Vulkan SKIP-as-fail stubs above are not regressions); CI driver-matrix run; a manual
+smoke card: open a 2K H.264 project, scrub, crossfade, export H.265 — all Vulkan — and
+eyeball vs the VA-API default.
 
 **Exit gate.** Everything green everywhere; the §29 lesson held (Vulkan decode optional,
 VA-API baseline intact); documentation current; rollout toggle shipped.
@@ -2051,6 +2087,9 @@ post-~Oct-2026 fix (R18), Intel encode ≥ 26.2 (R23), RADV decode floors, RDNA4
 ---
 
 ## Phase exit-gate ledger (one-glance)
+
+**Status (2026-09-17):** only Phase 0 has landed (harness + 10 tests); P-A..P-G are
+unimplemented. The table is the gate each phase must clear, not a status report.
 
 | Phase | Gate | Blocks |
 |---|---|---|

@@ -15,6 +15,12 @@
 #include <sys/stat.h>
 #endif
 
+#if defined(NDEBUG)
+#define CANVAS_LOGGING 0
+#else
+#define CANVAS_LOGGING 1
+#endif
+
 namespace canvas::core::log {
 
 inline std::uint64_t epoch_ms() {
@@ -25,6 +31,7 @@ inline std::uint64_t epoch_ms() {
 }
 
 inline bool enabled() {
+    if (!CANVAS_LOGGING) return false;
     static const bool on = [] {
         const char* e = std::getenv("CANVAS_DEBUG");
         return e && *e && std::string(e) != "0";
@@ -336,6 +343,7 @@ inline std::mutex& mutex() {
 namespace canvas::core::log {
 
 inline void log_warning(const char* fmt, ...) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk_(::canvas::core::log::mutex());
     const auto now_ = std::chrono::system_clock::now();
     const auto t_ = std::chrono::system_clock::to_time_t(now_);
@@ -388,6 +396,7 @@ inline void log_error(const char* fmt, ...) {
 }
 
 inline void log_info(const char* fmt, ...) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk_(::canvas::core::log::mutex());
     const auto now_ = std::chrono::system_clock::now();
     const auto t_ = std::chrono::system_clock::to_time_t(now_);
@@ -415,6 +424,7 @@ inline void log_info(const char* fmt, ...) {
 
 namespace detail {
 inline void write_audio(const char* level, const char* fmt, va_list* ap) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk_(::canvas::core::log::mutex());
     const auto now_ = std::chrono::system_clock::now();
     const auto t_ = std::chrono::system_clock::to_time_t(now_);
@@ -439,6 +449,7 @@ inline void write_audio(const char* level, const char* fmt, va_list* ap) {
 }
 
 inline void log_audio_warning(const char* fmt, ...) {
+    if (!CANVAS_LOGGING) return;
     va_list ap;
     va_start(ap, fmt);
     detail::write_audio("WARN", fmt, &ap);
@@ -446,6 +457,7 @@ inline void log_audio_warning(const char* fmt, ...) {
 }
 
 inline void log_audio_info(const char* fmt, ...) {
+    if (!CANVAS_LOGGING) return;
     va_list ap;
     va_start(ap, fmt);
     detail::write_audio("INFO", fmt, &ap);

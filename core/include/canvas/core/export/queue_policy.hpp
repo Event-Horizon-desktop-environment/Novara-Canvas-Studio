@@ -30,4 +30,13 @@ struct Candidate {
     return best;
 }
 
+inline constexpr int kPriorityMin = -99;
+inline constexpr int kPriorityMax = 99;
+
+[[nodiscard]] inline int clamp_priority(const int priority) noexcept {
+    if (priority < kPriorityMin) return kPriorityMin;
+    if (priority > kPriorityMax) return kPriorityMax;
+    return priority;
+}
+
 }

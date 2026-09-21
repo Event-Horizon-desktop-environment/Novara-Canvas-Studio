@@ -73,6 +73,7 @@ private:
 
 inline void RenderTelemetry::note_gpu_attempt(bool landed, int reason, double total_ms,
                                               double decode_ms) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     ++gpu_attempts_;
     gpu_ms_.add(total_ms);
@@ -85,59 +86,70 @@ inline void RenderTelemetry::note_gpu_attempt(bool landed, int reason, double to
 }
 
 inline void RenderTelemetry::note_fast() {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     ++fast_;
 }
 
 inline void RenderTelemetry::note_cpu(double comp_ms) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     ++cpu_;
     comp_.add(comp_ms);
 }
 
 inline void RenderTelemetry::note_alloc_miss() {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     ++alloc_miss_;
 }
 
 inline void RenderTelemetry::note_stall() {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     ++stalls_;
 }
 
 inline void RenderTelemetry::note_resize(double ms) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     resize_ms_.add(ms);
 }
 
 inline void RenderTelemetry::note_encode(double ms) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     enc_.add(ms);
 }
 
 inline void RenderTelemetry::note_audio(double ms) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     audio_.add(ms);
 }
 
 inline void RenderTelemetry::set_progress(std::int64_t done, std::int64_t total) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     done_ = done;
     total_ = total > 0 ? total : 1;
 }
 
 inline void RenderTelemetry::observe_queue(std::size_t depth) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     if (depth > qmax_) qmax_ = depth;
 }
 
 inline void RenderTelemetry::note_pool_stalls(std::uint64_t stalls) {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     pool_stalls_ = stalls;
 }
 
 inline void RenderTelemetry::emit_locked(double fps, double eta_s, double comp_avg,
                                          double audio_avg, double enc_avg, double since_s) {
+    if (!CANVAS_LOGGING) return;
     const std::int64_t win_total = fast_ + cpu_;
     const double fast_pct =
         win_total > 0 ? 100.0 * static_cast<double>(fast_) / static_cast<double>(win_total) : 0.0;
@@ -165,6 +177,7 @@ inline void RenderTelemetry::emit_locked(double fps, double eta_s, double comp_a
 }
 
 inline void RenderTelemetry::tick() {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     const auto now = std::chrono::steady_clock::now();
     if (last_emit_ != std::chrono::steady_clock::time_point{}) {
@@ -195,6 +208,7 @@ inline void RenderTelemetry::tick() {
 }
 
 inline void RenderTelemetry::flush() {
+    if (!CANVAS_LOGGING) return;
     std::lock_guard<std::mutex> lk(mu_);
     if (gpu_attempts_ == 0 && fast_ == 0 && cpu_ == 0) return;
     const auto now = std::chrono::steady_clock::now();

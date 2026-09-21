@@ -1,19 +1,22 @@
-# Node System Research — Effects, Layers & Color Grading for Nova
+# Node System Research — Effects, Layers & Color Grading for Novara
 
 > Research doc. Compiled 2026-09-11 from DaVinci Resolve 18/19/21 Reference Manuals + the Fusion 9/17
 > manuals (official Blackmagic documents.blackmagicdesign.com), OpenFX 1.5.1 reference documentation
 > (AcademySoftwareFoundation), Blender 5.2 compositor documentation, The Foundry Nuke material,
 > FilmLight Baselight datasheets/BLG tooling, Adobe After Effects documentation, and practitioner
-> sources cross-checked against the official manuals. Companion to `docs/color.md` (color science +
-> the Resolve Color page) and the repo's own `grade_graph` implementation
-> (`core/include/canvas/core/grade_graph/`).
+> sources cross-checked against the official manuals. Companion to the repo's own
+> `grade_graph` implementation (`core/include/canvas/core/grade_graph/`) and the live plan
+> in `roadmap.md` (its color section C1–C7). (The earlier `docs/color.md` /
+> `docs/color-grading-phases.md` companions this doc was written against are no longer in
+> the tree; references to them below are kept only where the historical intent still
+> matters, and otherwise point at `roadmap.md`.)
 >
-> Question this doc answers: **what node system should Nova build so that color grading, effects,
+> Question this doc answers: **what node system should Novara build so that color grading, effects,
 > and layering/compositing are governed by one coherent law instead of three bolt-ons?** The answer
 > has two parts: a **model** decision (one graph, one pipe set, pluggable op kinds) and a **law**
 > decision (a single compositing/algebra core for layers + keys, with effect ops as parameterized
 > members of the same family). Where the industry evidence is unambiguous, this doc says so; where
-> systems disagree, it records both and picks based on Nova's constraints (headless, zero-warning,
+> systems disagree, it records both and picks based on Novara's constraints (headless, zero-warning,
 > GPU later, Resolve-parity UI).
 
 Note on method: a live probe of the installed DaVinci Resolve's node graph (via the Resolve MCP
@@ -42,13 +45,13 @@ The decisive existence proofs:
 - **Baselight-as-Nuke-node.** "Baselight can also act as a multi-input node in NUKE so that BLG files
   can refer to multiple input images… the BLG also stores format and mapping information" — a whole
   grade with all its layers and mattes is *one node* in a compositing graph. If the industry's
-  pure-color tool renders as a node, Nova's grade graph should too: **the per-clip grade tree is
+  pure-color tool renders as a node, Novara's grade graph should too: **the per-clip grade tree is
   itself a node kind** in a larger tree (its `kOutput` terminal becomes an input port to the outer
   graph). This confirms the unified direction and rules out two separate systems.
 - **Resolve hosts OFX effect nodes inside the color node tree.** The "effects" and the "grade" share
   one pipeline per clip. There is no second, separate effect engine.
 
-Rule for Nova: **one node graph, one set of pipes; node *kinds* partition by topology (chain,
+Rule for Novara: **one node graph, one set of pipes; node *kinds* partition by topology (chain,
 branch, merge, key, terminal), and a pluggable *op* slot parameterizes what each node computes.**
 The existing `grade_graph` already has the right topology kinds and the right pipe set; it just
 hardcodes one op family (`correct_mode ∈ {identity, lgg, cdl, curves}`) on corrector-shaped nodes.
@@ -58,11 +61,11 @@ That is the seam the rest of this doc widens.
 
 ## Part II — The data model (pipes, alpha, values)
 
-### 2.1 Pipes — Nova's three already match the industry
+### 2.1 Pipes — Novara's three already match the industry
 
 Fusion's Merge has *background + foreground + effect-mask*; Resolve nodes have a green RGB and a
 blue key connector; Nuke has image channels plus aux (z, normals); OFX clips are RGBA/RGB/Alpha
-components with an optional **mask clip** (`kOfxImageClipPropIsMask`). Nova's `PipeType
+components with an optional **mask clip** (`kOfxImageClipPropIsMask`). Novara's `PipeType
 {kRgb, kKey, kChannel}` in `graph.hpp` is the right shape: an image pipe, a single-channel matte
 pipe, and a channel pipe.
 
@@ -71,21 +74,26 @@ Two generalizations are worth *recording* but should be deferred (see Part V):
 - **Value/scalar wires** (Blender): "Compositing nodes operate on data that is either an image or a
   dimensionless single value… if image, input is per-pixel; if single value, it covers the whole
   space." This is how Blender lets one node's single-valued output (e.g. a Levels measurement or a
-  time parameter) drive another node's input *as a wire*. Nova v1 keeps op parameters as node data
+  time parameter) drive another node's input *as a wire*. Novara v1 keeps op parameters as node data
   (the current `LGG`/`CurveParams` style); scalar wires are a clean later extension because the
   port table (`node_ports`) already centralizes arity.
 - **Multichannel / EXR passes** (Nuke, OpenEXR): defer; the alpha-discipline below matters first.
 
 ### 2.2 Alpha discipline — premultiplied interior, straight at the boundary
 
-This is the single biggest *correctness* gap between the current Nova evaluator and any real
-compositing law.
+This was the single biggest *correctness* gap between the Novara evaluator this doc was
+written against and any real compositing law. The layer half has since been closed (below);
+the single-source keyed blend remains an intentional primitive.
 
-- Current `blend_into` (`core/src/grade_graph/eval.cpp:147`) blends **straight RGB** with a
-  `key*opacity` scalar: `out = acc + (layered - acc) * eff`, and copies alpha through untouched.
-  That is a correct *single-source keyed blend* (right for "apply this node's correction gated by a
-  matte"), but it is **not a compositing law** — it cannot represent A-over-B with two real alpha
-  channels, `In`/`Out`/`Atop`/`XOR`, or premultiplied edges.
+- The **keyed node blend** (`blend_by_key`, `core/src/grade_graph/eval.cpp:65`) still blends
+  **straight RGB** with a `key*opacity` scalar: `out = acc + (layered - acc) * eff`, and copies
+  alpha through untouched. That is a correct *single-source keyed blend* (right for "apply this
+  node's correction gated by a matte"), but on its own it is **not a compositing law** — it cannot
+  represent A-over-B with two real alpha channels, `In`/`Out`/`Atop`/`XOR`, or premultiplied edges.
+- **This gap has since been closed at the layer seam** (Part VI, Phase 6): `blend_into`
+  (`eval.cpp:125`) now delegates to `composite_sample(…, CompositeOp::kOver, blend, 0.0f)`, so
+  layers composite premultiplied with alpha recomputed (`as + ab(1−as)`) and the full Porter–Duff
+  operator set is available. The paragraphs below are the reasoning that produced that law.
 - Fusion is explicit: the Merge node "combines two images based on the Alpha (opacity) channel,…
   supports the standard Over, In, Held Out, Atop, and XOr methods" and can run **additive
   (premultiplied) or subtractive (non-premultiplied)** compositing, with an Additive↔Subtractive
@@ -93,8 +101,9 @@ compositing law.
   equations* (`Over: A + B(1-a)`, `In: Ab`, `Out: A(1-b)`, `Atop`, `XOr`, `Matte`, `Mask`,
   arithmetic…). AE likewise composites on alpha and lets "render transformation before effects".
 
-Recommendation — two compositing fundamentals in one headless law module (`composite.hpp` in
-`core/include/canvas/core/grade_graph/`):
+Recommendation — **implemented as `composite.hpp` + `composite.cpp`** in
+`core/include/canvas/core/grade_graph/` (see Part VI). Two compositing fundamentals in one
+headless law module:
 
 1. A **Porter–Duff operator set** as `CompositeOp { kOver, kIn, kOut, kAtop, kXor, kDisjoint,
    kMask, kStencil }` with the standard alpha coefficients (Fusion names), applied on
@@ -110,12 +119,12 @@ rest as blend-family ops applied *on the premultiplied result*, then gate by the
 opacity exactly as today. The layer-mixer law becomes: composite each layer over the accumulated
 stack with `(keys, opacity, blend-family)` driving a per-pixel mix of the Porter–Duff result.
 
-### 2.3 Livesthe `effect mask` already exists — it is the key pipe
+### 2.3 The `effect mask` already exists — it is the key pipe
 
 OFX's "EffectMask" input ("a clip that is intended to be used as a mask input… where the mask is
 zero the effect should not occur, where it is whitepoint the effect should be full-on") is exactly
-Nova's key pipe, and the current evaluator already gates `correction * key * opacity`
-(`blend_by_key`, eval.cpp:83). So **every node — including future effect ops — gets an effect mask
+Novara's key pipe, and the current evaluator already gates `correction * key * opacity`
+(`blend_by_key`, `eval.cpp:65`). So **every node — including future effect ops — gets an effect mask
 for free.** A noise/glow/grain op constrained to a region is the "windowed effect" pattern without
 a single new mechanism. Windows/qualifiers/mag-masks are simply *key-producing* ops (they write the
 blue pipe), matching Resolve ("blue connectors carry key/matte channels").
@@ -124,7 +133,7 @@ blue pipe), matching Resolve ("blue connectors carry key/matte channels").
 
 ## Part III — Layers: the two shapes both reduce to one law
 
-There are two "layers" concepts in the industry UI, and both should reduce to the same Nova law:
+There are two "layers" concepts in the industry UI, and both should reduce to the same Novara law:
 
 1. **A sub-stack of blended corrections** (Resolve Layer Mixer; Baselight layer stack; AE layer
    stack). Resolve's manual pins the priority convention precisely:
@@ -137,26 +146,26 @@ There are two "layers" concepts in the industry UI, and both should reduce to th
    > its output has higher mix priority than any other nodes previously connected" (Advanced Panel
    > manual).
 
-   So **the lowest input slot = the topmost layer**. Nova's existing laws already implement the
+   So **the lowest input slot = the topmost layer**. Novara's existing laws already implement the
    *shoulders* of this correctly — `add_layer` appends at the highest port (`highest+1`), i.e. the
    new layer ends up topmost/dominant, exactly "add layer with higher mix priority" — while the
    evaluator composites ascending ports bottom→top (highest port on top). **Conventions are
    compatible** provided the external layer list is pinned as *descending port = top-to-bottom
-   priority*. Nova's `set_layer_order`/`add_layer` (already headless-tested) become the law for
+   priority*. Novara's `set_layer_order`/`add_layer` (already headless-tested) become the law for
    that ordering; the UI layer list renders top = highest port.
 
-   The one wording hazard: Basset the doc `color-grading-phases.md` Phase 2 note says "lowest mixer
-   input = topmost layer" (echoing the manual) while the code's `set_layer_order` takes a
+   The one wording hazard noted at the time: a companion phase doc's Phase 2 note said "lowest
+   mixer input = topmost layer" (echoing the manual) while the code's `set_layer_order` takes a
    "bottom-to-top" list. Both are true only if "bottom" means the *stack's* bottom (= top of output
    priority). The research doc pins one invariant: **layer list reads top-to-bottom in output
    priority; port numbers ascend bottom→top internally; `set_layer_order`'s argument order === port
-   order.** (A one-line comment in `edit.hpp` will make it unambiguous when Phase 6 lands.)
+   order.** (A one-line comment in `edit.hpp` would make it unambiguous.)
 
 2. **A generic A-over-B merge** (Fusion `Merge`, Nuke `Merge`, Gaffer). The Fusion ops table is the
    reference: `Over, In, Held Out, Atop, XOr, Disjoint, Mask, Stencil` with alpha equations, plus
    `Add/Subtract/Multiply/Screen/Difference/Min/Max` arithmetic. Fusion's `MultiMerge` is the
    N-input version (a background + N foreground layers in a keyframeable layer list), which is
-   geometrically the same thing as Nova's Layer Mixer once the alpha law is fixed.
+   geometrically the same thing as Novara's Layer Mixer once the alpha law is fixed.
 
 Recommendation: **do not build a separate Merge node kind.** Rule-by-position: the Layer Mixer
 *is* the merge — N inputs, base first (edge order contract already enforced by the Phase 6 laws),
@@ -180,7 +189,7 @@ Effects are not a new graph engine, they are new members of one op table. Each i
 | Family | Members (Resolve/Fusion-resident names) | Implementation trait |
 |---|---|---|
 | **Grade** (exists) | LGG/offset, CDL, curves, balance, RGB mixer, HSL curves | pointwise |
-| **Transform** | CST/LUT/color-managed nodes (color.md Part II.7), tone/gamut mapping | pointwise; needs pipeline-place |
+| **Transform** | CST/LUT/color-managed nodes (roadmap.md C5), tone/gamut mapping | pointwise; needs pipeline-place |
 | **Spatial** | Blur (gaussian/box), Sharpen (unsharp → the reserved `Mid/Detail`), Glow/Halation, Film Grain (spatial/temporal), Light Rays, Bloom, Tilt/Defocus, Vignette, Chromatic Aberration, Soften/mist | **neighborhood** — needs a kernel; GPU pass is the expensive neighbor and the caching trigger |
 | **Key** (mask/matte producers) | Qualifier, power windows (circle/poly/linear/gradient), outside-node partner | produce key pipe |
 | **Merge/layer** | Layer Mixer (Part III) | compositing law |
@@ -191,27 +200,27 @@ per-node opacity, "node cache" states) — no model change.
 
 ### 4.2 The OFX lessons to adopt as concepts (not the ABI)
 
-OpenFX 1.5.1 defines the industry effect contract. Nova's internal op registry should mirror its
+OpenFX 1.5.1 defines the industry effect contract. Novara's internal op registry should mirror its
 concepts so a future OFX host maps 1:1:
 
 - **Contexts as arity/behavior classes**: `Filter` (one input), `General` (arbitrary inputs, tree
   compositing), `Transition` (two inputs + progress), `Retimer` (speed against a source-time
-  parameter), `Generator` (no input). Nova v1 needs Filter + General (+ Retimer = existing per-clip
+  parameter), `Generator` (no input). Novara v1 needs Filter + General (+ Retimer = existing per-clip
   speed law, outside the color graph).
 - **`GetFramesNeeded`** — an op declares which input frames it needs to produce one output frame
   (temporal reach). Grain seeding, temporal blur, and any future temporal op hang on this; giving
   the evaluator a frame/time context and an op-declared reach is the v1 mechanism (see Part V.2).
 - **`IsIdentity`** — the host can skip an op whose current params are identity (copy input).
-  Nova should implement this as op metadata (`op_is_identity(op, params)`) — free wins for the
+  Novara should implement this as op metadata (`op_is_identity(op, params)`) — free wins for the
   common "reset" case and for `kIdentity`.
 - **Optional input clips** — a node may present but not require an input (unconnected = default).
-  Nova already models "unconnected rgb = clip source, unconnected key = 1.0"; OFX gives the
+  Novara already models "unconnected rgb = clip source, unconnected key = 1.0"; OFX gives the
   language for "optional" semantics per port.
 - **Region-of-definition / "given a region I want to render, what region do you need from input"** —
   the spatial budgeting primitive. v1 can ignore it (full-frame ops); the op registry should leave
   a noted seam for it.
 
-Deliberately **not** adopting the OFX C ABI in v1 matches `color.md` §3.7 (own plugins first; OFX
+Deliberately **not** adopting the OFX C ABI in v1 (own plugins first; OFX
 hosting later). The op registry (`op_id`, param schema, `apply(pixels|frame, params, key, time)`,
 CPU reference + GPU shader twin, identity test) IS the plugin contract; an OFX adapter later wraps
 the registry.
@@ -219,8 +228,9 @@ the registry.
 ### 4.3 Effect-specific math notes (recorded, not yet encoded)
 
 - **Blur**: separable; gaussian radius in pixels, kRadius clamp per `visual.hpp` culture.
-- **Sharpen / Mid/Detail**: unsharp; already deferred to the Phase 7 GPU pass in
-  `color-grading-phases.md` ("Mid/Detail (spatial unsharp)… no neighborhood math here").
+- **Sharpen / Mid/Detail**: unsharp; deferred to the Phase 7 GPU pass (the original phase
+  doc's note: "Mid/Detail (spatial unsharp)… no neighborhood math here" — that doc is no
+  longer in the tree).
 - **Glow**: threshold/blur/screen classic; Resolve's Glow/Halation family.
 - **Film grain**: per-channel noise with a **deterministic per-frame seed** (time param) so the
   cache is scrub-correct — same seed law as any temp-locked op.
@@ -235,22 +245,22 @@ the registry.
 
 ### 5.1 Scope hierarchy (where graphs hang)
 
-Resolve's order of operations (color.md §2.1): timeline → group pre-clip → clip → group post-clip.
-Nova's existing single *per-clip* tree is the middle of that. Recommended minimum:
+Resolve's order of operations: timeline → group pre-clip → clip → group post-clip.
+Novara's existing single *per-clip* tree is the middle of that. Recommended minimum:
 
 1. **Clip-level tree** (exists) — the per-shot grade + effects; the `kOutput` becomes an input
    port to the outer graph (Part I).
 2. **Sequence/timeline tree** (new) — global looks, output CST/tone-map, and shot-proof whole-film
-   grain; its output is the final composite. Placement is pinned by the already-planned render
-   `PipelineStage` enum (`pipeline.hpp`, color.md §3.4: input transform → grade → tone map →
-   output gamut map → display).
+   grain; its output is the final composite. Placement is pinned by the planned (not yet written)
+   render `PipelineStage` enum (`pipeline.hpp`, still to be added) — input transform → grade →
+   tone map → output gamut map → display.
 
 Group pre/post and per-track graphs are v2; the two-level model is the stable Resolve-normal for an
 NLE (input CST at group/timeline, creative at clip).
 
 ### 5.2 Evaluation law: push reference + cached demand
 
-Nova's evaluator is a clean per-frame **push** (topological Kahn over the terminal-reachable
+Novara's evaluator is a clean per-frame **push** (topological Kahn over the terminal-reachable
 subgraph, `eval.cpp`). That is the correct reference law and should stay — headless tests pin it.
 Industry practice (Nuke's per-node caches + DiskCache node, Resolve's "cache expensive nodes" for
 Magic Mask, Blender's per-node caching) adds a **memoization cache on top, never instead of**:
@@ -274,15 +284,20 @@ Magic Mask, Blender's per-node caching) adds a **memoization cache on top, never
   v2 — but serialization should already round-trip a node-with-subgraph, so later addition is a
   load-order change, not a format break.
 - Scalar/value wires, multichannel/EXR passes, generators, region-of-definition budgeting.
-- OFX C ABI hosting (color.md §3.7, deliberate).
+- OFX C ABI hosting (deliberate).
 
 ---
 
-## Part VI — Phased plan (mapped onto `color-grading-phases.md`)
+## Part VI — Phased plan
 
 All phases keep the repo invariants: headless (`check_qtdep`), zero-warning, `ctest` pinned.
 
-**Phase 6 (in flight — finish the canvas over the real model)**
+**Phase 6 (in flight — finish the canvas over the real model).** The two *laws* below are
+done and regression-pinned; the two *canvas-wiring* items after them are still open.
+Separately, a full Resolve-style color page now exists at `gui/src/features/color/` — it
+renders the per-clip `grade_graph`, commits each grade as one undoable `set_clip_grade`
+edit, and ships wheels/curves/scopes/LUTs + an Effects dock. Its node canvas
+(`node_graph_canvas.cpp`) is still model-read only.
 - **Porter–Duff layer law — DONE (2026-09-11).** New headless law module
   `core/include/canvas/core/grade_graph/composite.hpp` + `composite.cpp`
   (`CompositeOp` added beside `BlendMode` in `graph.hpp`; per-layer Node fields
@@ -302,7 +317,8 @@ All phases keep the repo invariants: headless (`check_qtdep`), zero-warning, `ct
   alias kept, Node field name/JSON key `correct_mode` unchanged so project
   files and the existing Qt tree compile/load untouched — `roundtrip_test.cpp`
   is user WIP and needed no edit). New headless registry
-  `core/grade_graph/op.hpp/.cpp` owns the seam Phase 7 widens: `op_apply`
+  `core/include/canvas/core/grade_graph/op.hpp` + `core/src/grade_graph/op.cpp`
+  owns the seam Phase 7 widens: `op_apply`
   (pointwise dispatch, byte-identical to the old evaluator switch — eval.cpp
   now delegates, the colorsci laws are untouched), `op_is_identity` (exact-by-
   params OFX IsIdentity fast-path for every kind: default LGG/offset/CDL and
@@ -311,10 +327,13 @@ All phases keep the repo invariants: headless (`check_qtdep`), zero-warning, `ct
   `op_test` (38 checks) pins parity, identity, names, and tolerant load;
   regression: `composite_test`, `graph_test`, `graph_edit_test` all green
   under strict `-Werror`.
-- **Remove-node law** (`edit.hpp/../edit.cpp`): `remove_node` (unwire incident edges, detach serial
-  links, chain who-connects-whom), so the canvas Delete key edits the *model*, not the scaffold.
-  This unblocks the "can't delete nodes" bug for real, model-backed deletion.
-- Wire mousePress/Delete/context-menu on `NodeGraphCanvas` to `edit.cpp` laws.
+- **Remove-node law** (`edit.hpp`/`edit.cpp`) — **still open (2026-09-17)**: no
+  `remove_node` exists anywhere in `core/`. It needs to unwire incident edges, detach serial
+  links, and chain who-connects-whom, so the canvas Delete key edits the *model*, not the
+  scaffold. This unblocks the "can't delete nodes" bug for real, model-backed deletion.
+- Wire mousePress/Delete/context-menu on `NodeGraphCanvas` to `edit.cpp` laws — **still
+  open**: `delete_selected_nodes()` currently removes `QGraphicsItem`s only and never
+  mutates the clip's graph.
 
 **Phase 7 (GPU + spatial ops)**
 - Spatial registry: blur, glow, sharpen/Mid-Detail (the reserved unsharp slot), film grain
@@ -324,8 +343,8 @@ All phases keep the repo invariants: headless (`check_qtdep`), zero-warning, `ct
 
 **Phase 8 (effects completion)**
 - Light rays, tilt/defocus, vignette, chromatic aberration, halation/bloom; Effects dock list
-  becomes a real registry-backed catalog over the clip's graph (start of color.md §2.10).
-- OFX-host groundwork only if a third-party ecosystem is needed (out of scope per §3.7 otherwise).
+  becomes a real registry-backed catalog over the clip's graph.
+- OFX-host groundwork only if a third-party ecosystem is needed (out of scope otherwise).
 
 **v2 (post-Phase-8)**
 - Compound/shared nodes; scalar value wires; multichannel/EXR; OFX hosting; generators.
@@ -354,9 +373,7 @@ All phases keep the repo invariants: headless (`check_qtdep`), zero-warning, `ct
   blend modes, implicit alpha) + Baselight Editions NUKE datasheet (BLG as a multi-input Nuke node).
 - Adobe After Effects documentation — composition/layer rendering order: bottom first, per-layer
   masks → effects → transforms → styles; adjustment layers; precomposing/nesting.
-- `docs/color.md` (Nova) — Resolve node types/hierarchy, LGG/CDL/curves math, CST/LUT, scopes,
-  pipeline-stage plan, Out-of-scope §3.7.
-- `docs/color-grading-phases.md` (Nova) — Phase 2 model/evaluator, Phase 4 wheels, Phase 5 curves,
-  Phase 6 canvas, Phase 7 GPU + Mid/Detail.
+- `roadmap.md` (Novara) — the live plan this doc's phases now map onto: the color section
+  (C1–C7) and the Phase-6/7 GPU + spatial-op items.
 - `core/include/canvas/core/grade_graph/{graph,edit}.hpp`, `core/src/grade_graph/eval.cpp`
-  (Nova) — the current model, edit laws, and evaluator this doc extends.
+  (Novara) — the current model, edit laws, and evaluator this doc extends.

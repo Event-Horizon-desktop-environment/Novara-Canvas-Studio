@@ -141,6 +141,7 @@ private:
     void on_open_recent_file(QAction* action);
     void on_save_project();
     void on_save_project_as();
+    void on_archive_project();
     void on_undo();
     void on_redo();
     void on_position_changed(int64_t frame_number);
@@ -153,6 +154,7 @@ private:
     void update_time_label();
     void refresh_timeline();
     void update_fps_label();
+    bool write_project_file(const QString& path);
     bool save_project_to(const QString& path);
     void push_snapshot(int64_t initial_frame = -1);
     void maybe_autosave();

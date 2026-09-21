@@ -196,7 +196,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 }
             });
 
-    setWindowTitle(tr("Nova Canvas Studio"));
+    setWindowTitle(tr("Novara Canvas Studio"));
     resize(1440, 860);
     status_->showMessage(tr("Import media with File > Import Media (Ctrl+I)"));
 

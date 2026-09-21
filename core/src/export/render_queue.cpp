@@ -223,7 +223,16 @@ bool RenderQueue::is_paused() const {
 void RenderQueue::set_priority(const uint64_t id, const int priority) {
     std::lock_guard<std::mutex> lk(mutex_);
     for (auto& j : jobs_)
-        if (j.id == id && j.status == RenderJob::Status::Queued) j.priority = priority;
+        if (j.id == id && j.status == RenderJob::Status::Queued)
+            j.priority = queue_policy::clamp_priority(priority);
+    if (on_changed) on_changed();
+}
+
+void RenderQueue::bump_priority(const uint64_t id, const int delta) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    for (auto& j : jobs_)
+        if (j.id == id && j.status == RenderJob::Status::Queued)
+            j.priority = queue_policy::clamp_priority(j.priority + delta);
     if (on_changed) on_changed();
 }
 

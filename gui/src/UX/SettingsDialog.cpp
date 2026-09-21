@@ -362,13 +362,13 @@ QWidget* SettingsDialog::build_theme_tab() {
     connect(import_btn, &QPushButton::clicked, this, [this] {
         const QString path = QFileDialog::getOpenFileName(
             this, tr("Import Theme"), QString(),
-            tr("Nova Canvas Theme (*.json *.canvas-theme);;All Files (*)"));
+            tr("Novara Canvas Theme (*.json *.canvas-theme);;All Files (*)"));
         if (path.isEmpty()) return;
         QString name;
         if (!import_theme_file(path, &name)) {
             QMessageBox::warning(
                 this, tr("Import Theme"),
-                tr("Not a valid Nova Canvas theme file."));
+                tr("Not a valid Novara Canvas theme file."));
             return;
         }
         QSettings settings;
@@ -386,12 +386,12 @@ QWidget* SettingsDialog::build_theme_tab() {
         bool ok = false;
         const QString name = QInputDialog::getText(
             this, tr("Save Theme"), tr("Theme name:"), QLineEdit::Normal,
-            QStringLiteral("Nova Theme"), &ok);
+            QStringLiteral("Novara Theme"), &ok);
         if (!ok || name.trimmed().isEmpty()) return;
         const QString path = QFileDialog::getSaveFileName(
             this, tr("Save Theme"),
             name.trimmed() + QStringLiteral(".canvas-theme.json"),
-            tr("Nova Canvas Theme (*.json *.canvas-theme);;All Files (*)"));
+            tr("Novara Canvas Theme (*.json *.canvas-theme);;All Files (*)"));
         if (path.isEmpty()) return;
         if (!export_theme_file(path, name.trimmed()))
             QMessageBox::warning(this, tr("Save Theme"),

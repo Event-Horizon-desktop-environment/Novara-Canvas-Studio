@@ -2,7 +2,7 @@
 
 > Companion to `docs/vulkan.md`. Documents the decision, current engine wiring,
 > driver landscape, and — most importantly — **every known VAAPI issue + the fix**
-> that can bite Nova Canvas Studio's timeline preview, media-pool thumbnails,
+> that can bite Novara Canvas Studio's timeline preview, media-pool thumbnails,
 > source preview, and VAAPI export. Written 2026-09-12 from web research; driver
 > facts dated where known. This is the "AMD route": CUDA remains the NVIDIA-only
 > fast path, VAAPI is the AMD (and Intel) hardware decode/encode route.
@@ -15,7 +15,7 @@
 |---|---|
 | Does the app support AMD today? | **Yes — VAAPI.** `HwDeviceManager` probes `cuda → vaapi → qsv → vulkan` and picks whatever init succeeds first; on an AMD box `radeonsi` wins and every preview decodes in hardware. |
 | Was that the intent? | Originally CUDA/NVIDIA-only was requested; on reflection VAAPI was chosen as the AMD route. zluda was considered and **rejected for decode**: zluda translates the CUDA runtime/ABI for *shader compute*, but FFmpeg's `cuda` decoder uses **NVDEC**, a hardware codec block that only exists on NVIDIA silicon. You cannot get NVDEC from an AMD GPU through any translation layer — **VAAPI is the only hardware decode route on AMD** (see §11). |
-| Does VAAPI give the same GPU fast path as CUDA? | **No.** The zero-copy GPU composite path (`decode_to_hw`, `decode_to_hw_indexed`, `decode_nv12`) is **CUDA-only** in the engine today. VAAPI decodes on the GPU but every frame is downloaded to CPU (NV12 → swscale → RGBA). Hardware decode still offloads the CPU heavily; it just doesn't keep the picture on-GPU like NVDEC does. See §9 "engine gaps". |
+| Does VAAPI give the same GPU fast path as CUDA? | **Not for compositing — but the keep-it-on-GPU half now works too.** The engine's GPU fast-path predicate `hw_fast_path_pixfmt()` admits both `AV_PIX_FMT_CUDA` *and* `AV_PIX_FMT_VAAPI`, so `decode_to_hw`/`decode_to_hw_indexed`/`decode_nv12` run on VAAPI as well: the decoder exports a VA surface (dma_buf) and, when the viewer's EGL import is available, `ViewerGL` composites it without a CPU round-trip. What remains CUDA-only is the *composite/grade kernel* layer (`nv12Resize`, grade LUT, `frame_gpu`) — on AMD the resize/grade/transition math is still CPU swscale, so playback is `decode-on-GPU + CPU-composite`. CPU download (NV12 → swscale → RGBA) is the fallback when the EGL import path isn't available. See §8.3/§9. |
 | Known issue density | Decode: low but real (driver/Mesa-version dependent artifacts, P010 handling, no error concealment). Encode: **higher** — rate-control wiring, packed/global headers, HEVC P-frame corruption on specific VCN parts, the HEVC 64×16 bar bug. See §7. |
 
 **Bottom line:** VAAPI is correct for AMD. Treat decode as "seriously production but
@@ -29,12 +29,14 @@ quality-path wiring now maps crf/rc onto VAAPI's rc_mode/global_quality knobs
 ## 2. What the engine uses today (code-ground truth)
 
 All paths below are the VAAPI surfaces for timeline preview / media preview /
-source preview / export. Line numbers verified against the tree on 2026-09-12.
+source preview / export. Line numbers last verified against the tree on
+2026-09-17 (they drift as the code moves — trust the symbol names over the
+numbers).
 
 ### 2.1 Device probe — `core/src/media/hw_device.cpp`
-- `kProbeOrder[] = {"cuda", "vaapi", "qsv", "vulkan"}` (`hw_device.cpp:16`) — on
+- `kProbeOrder[] = {"cuda", "vaapi", "qsv", "vulkan"}` (`hw_device.cpp:14`) — on
   AMD, `radeonsi` init succeeds and `device_name_ = "vaapi"`.
-- `av_hwdevice_ctx_create(&ref, type, nullptr, nullptr, 0)` (`hw_device.cpp:57`) —
+- `av_hwdevice_ctx_create(...)` with a null `device` (`hw_device.cpp:100–101`) —
   **null device** → FFmpeg auto-derives the VA display (Wayland → X11 → DRM) and
   auto-picks the first render node. This is the source of the multi-GPU and
   headless pitfalls in §7.A.
@@ -45,45 +47,53 @@ source preview / export. Line numbers verified against the tree on 2026-09-12.
 ### 2.2 Decode — `core/src/media/video_decoder.cpp`
 - `open()` scans `avcodec_get_hw_config(cand, i)` for a decoder matching the
   device type and sets `hw_pix_fmt_` + a `get_format` callback
-  (`video_decoder.cpp:401–482`). With a VAAPI device the hw pix fmt is
+  (`video_decoder.cpp:~292–361`). With a VAAPI device the hw pix fmt is
   `AV_PIX_FMT_VAAPI`, hw decoders are `h264_vaapi` / `hevc_vaapi` / `av1_vaapi` /
   `vp9_vaapi`.
 - If the codec can't actually decode in hardware, FFmpeg emits **software frames
   from a hardware-configured decoder** — the engine detects this and re-anchors /
-  latches `soft_only_` (`video_decoder.cpp:1081–1096`).
-- `make_rgba_frame()` is the VAAPI download path: `av_hwframe_transfer_data(sw, src, 0)`
-  pulls NV12/P010 to CPU, then a pinned swscale converts to full-range RGBA using
-  the file's resolved matrix/range (`video_decoder.cpp:1225–1323`).
-- **The GPU fast paths are CUDA-only by design:**
-  `decode_to_hw`/`decode_to_hw_indexed` bail unless `hw_pix_fmt_ == AV_PIX_FMT_CUDA`
-  (`video_decoder.cpp:965`, `:1177`). On VAAPI these never fire → §9.
+  latches `soft_only_` (`video_decoder.cpp:691`, logged at `:717`/`:739`).
+- `SoftDecoder::convert_to_rgba()` is the download path: `av_hwframe_transfer_data(sw, src, 0)`
+  pulls NV12/P010 to CPU (`sw_decode.cpp:413`), then a pinned swscale converts to
+  full-range RGBA using the file's resolved matrix/range (`sw_decode.cpp:474–483`).
+  (`make_rgba_frame()` was the old name — the code now lives in `sw_decode.cpp`.)
+- **The GPU fast paths are not CUDA-only:** the predicate `hw_fast_path_pixfmt()`
+  (`video_decoder.cpp:44–46`) returns true for both `AV_PIX_FMT_CUDA` and
+  `AV_PIX_FMT_VAAPI` (the bare-CUDA branch at `:48` is only the no-VAAPI build
+  fallback). `decode_to_hw` checks it at `:600` and `decode_to_hw_indexed` at
+  `:749`, so on VAAPI these *do* fire and hand back a borrowed device plane;
+  `decode_nv12`'s gate is likewise `!cuda_available() && dev != "vaapi"`
+  (`timeline_decoder.cpp:461`). What is still CUDA-only is the composite/grade
+  kernel layer (`timeline_decoder.cpp:773`) — see §8.3/§9.
 
 ### 2.3 Timeline / source preview — `gui/src/features/playback/timeline_decoder.cpp`
-- Shares one `HwDeviceManager hw_{"playback"}` across every per-media decoder slot
-  and the transition/re-anchor decoders (`timeline_decoder.cpp:77`, `:112`,
-  `:936`, `:1059`). Timeline preview and source preview (which rides on
+- Owns one `HwDeviceManager hw_{"playback"}` (`timeline_decoder.hpp:104`) shared by
+  every per-media decoder slot and the transition/re-anchor decoders (passed to
+  `decoder.open(...)` at `timeline_decoder.cpp:56`/`:86`; transition decoders
+  `:838–840`). Timeline preview and source preview (which rides on
   `SequenceController` → `TimelineDecoder`) therefore share the same device.
 
 ### 2.4 Media preview / thumbnails — `gui/src/features/thumbnails/thumbnail_service.cpp`
-- Each worker owns its own `HwDeviceManager hw{"thumbs"}` (`:288`) and decodes via
-  `decoder.open(req.path, &error, hw.device_ctx())` (`:537–540`). Same download+
-  swscale path as §2.2, so media-pool thumbnails are VAAPI-decoded too.
+- Each worker owns its own `HwDeviceManager hw{"thumbs"}` (`:286`) and decodes via
+  `decoder->open(req.path, &error, hw.device_ctx(), hw.device_label().c_str())`
+  (`:576`). Same download+swscale path as §2.2, so media-pool thumbnails are
+  VAAPI-decoded too.
 
 ### 2.5 Export — `core/src/export/exporter.cpp` + `deliver_preset.cpp`
 - `EncoderBackend::AMD → h264_vaapi / hevc_vaapi / av1_vaapi`
-  (`deliver_preset.cpp:27,90–112`).
-- `hw_device_for_codec("…vaapi…") → "vaapi"` (`exporter.cpp:96–103`); VAAPI is in
-  `available_hw_devices()` (`:159–174`).
+  (`deliver_preset.cpp:23,130–152`).
+- `hw_device_for_codec("…vaapi…") → "vaapi"` (`exporter.cpp:91–101`); VAAPI is in
+  `available_hw_devices()` (`:602`).
 - Encode session: `AV_PIX_FMT_VAAPI` pixels, hw-frames pool with `sw_format = NV12`,
   `initial_pool_size = 12`, `gop_size = 120`, `max_b_frames = 0`
-  (`exporter.cpp:362–364`, `:470–491`). CPU composited RGBA → swscale → NV12 →
+  (`exporter.cpp:250–253`, `:797–798`). CPU composited RGBA → swscale → NV12 →
   `av_hwframe_get_buffer` + `av_hwframe_transfer_data` upload per frame
-  (`:580–589`, `:788/873/907/1161/1222/1257`).
+  (`vaapi_feed_frame :466–542`, `produce_vaapi :544–578`).
 - **Quality path is VAAPI-aware (§8.1, shipped 2026-09-12):** `crf`/`rc` intent
   is mapped onto VAAPI's `rc_mode`/`global_quality`/`qp` private options for
-  `*_vaapi` codecs (`exporter.cpp:385–391` via `vaapi_encode`); non-VAAPI codecs
+  `*_vaapi` codecs (`exporter.cpp:806–816` via `vaapi_encode`); non-VAAPI codecs
   keep the crf push. Bitrate-driven modes gain `rc_mode=CBR/VBR` for VAAPI
-  (`exporter.cpp:414–416`).
+  (`exporter.cpp:831–837`).
 
 ---
 
@@ -212,8 +222,9 @@ sessions mis-detected.x — Chromium/docs blame improper Wayland detection.
 *Fix:* unset `DISPLAY`, or force DRM: FFmpeg's explicit `vaapi=…:/dev/dri/renderD128`
 device, or run `vainfo` with the `drm` display. In headless CI/renders, always pass
 the explicit render node.
-*App status:* the `[hw]` probe uses null devices everywhere (`hw_device.cpp:57`,
-`exporter.cpp:467`). On a headless render box the null device still lands on DRM
+*App status:* the `[hw]` probe uses a null device (`hw_device.cpp:100–101`), and
+the exporter's frames pool does too unless a preferred GPU is pinned
+(`exporter.cpp:240`). On a headless render box the null device still lands on DRM
 eventually, but explicit-node is the robust route.
 
 **A4. Old AMD parts with missing profiles.**
@@ -280,7 +291,7 @@ is tagged but a fixed-function vaapi scaler converts colors without linearizing
 (iHD #1833 — `scale_vaapi` ≠ `zscale`).
 *Fix (app):* read the *frame's* `colorspace`/`color_range` after download (we do —
 `sws_setColorspaceDetails` pinned from resolved tags + BT.601/709/2020 matrix
-selection, `video_decoder.cpp:1294–1323`); never let the hw scaler do color math
+selection, `sw_decode.cpp:474–483`); never let the hw scaler do color math
 into the preview (VAAPI is used for decode only; CPU swscale owns color).
 
 **B6. VC-1 / MPEG-2 / old-codec gaps upstream.**
@@ -293,23 +304,23 @@ MPV/Jellyfin both have VAAPI trickplay/seek artifact reports (Jellyfin #17133 on
 H.264 + mjpeg; frame-scattering on newer-writes at GOP boundaries). Root cause is
 serving a reference-dependent frame without priming its GOP.
 *Fix (app):* always open at an I-frame for VAAPI seeks. The engine's iframe table +
-`container_seek_seconds` re-anchor covers this — keep it active for the VAAPI
-backend (make sure `decode_to_hw_indexed`-style logic is not CUDA-gated for the
-vaapi download path; today it is, §9).
+`container_seek_seconds` re-anchor covers this, and the VAAPI download path now
+runs through the same indexed path (`hw_fast_path_pixfmt()` admits VAAPI — §2.2),
+so it is no longer CUDA-gated.
 
 ### C. GPU interop / zero-copy
 
-**C1. No zero-copy preview on AMD.**
+**C1. Zero-copy preview on AMD is gated by EGL/dma_buf.**
 VAAPI surfaces *can* be presented directly (dmabuf via `vaExportSurfaceHandle`,
 used by mpv/Firefox/Chromium), but that requires libva dmabuf interop + GL/Vulkan
 import in the viewer. Chrome/libplacebo need `PL_HANDLE_DMA_BUF` and a GL/Vulkan
 backend (mpv #17028/NixOS #331756: "VAAPI hwdec only works with OpenGL or Vulkan
 backends"). VLC does not support it at all.
-*App status:* the engine deliberately **does not** import VAAPI surfaces into
-`ViewerGL` today — it downloads to CPU RGBA. Correct and simple; the cost is a
-per-frame DMA read + swscale. If previews ever need zero-copy, it's dmabuf import
-into the GL widget (Qt has no first-class helper; done via QOpenGLExtraFunctions +
-EGLImage). Flag as a real feature gap but not a bug.
+*App status:* the engine now does this — `VaapiViewerImporter` imports the
+exported surface into `ViewerGL` when the EGL `EGL_EXT_image_dma_buf_import`
+extension is present, and falls back to the CPU NV12→RGBA download otherwise
+(§8.3). The gap is closed where the GL/EGL prerequisite exists; the fallback (a
+per-frame DMA read + swscale) is still correct on hosts without it.
 
 **C2. NV12 upload for export double-copies.**
 Export composites on CPU to RGBA, swscale → NV12, `av_hwframe_transfer_data` into
@@ -353,20 +364,21 @@ Old-school AMD error, still the signature for unstable h264_vaapi configs:
 bitrate + B-frames + non-baseline profile combinations blow the VA context
 (my.ffmpeg-user 2020: "Use the baseline profile, set a fixed bitrate (via -b:v)
 and explicitly disable B-frames"). The engine already sets `max_b_frames = 0`
-(`exporter.cpp:364`) — keep B-frames off for VAAPI H.264.
+(`exporter.cpp:798`) — keep B-frames off for VAAPI H.264.
 *Fix:* main/baseline profile, fixed bitrate (CBR), `-bf 0`, current Mesa.
 
 **D4. "Driver does not support some wanted packed headers (wanted 0xd, found 0)" + "No global header will be written".**
 VAAPI drivers disagree on SPS/PPS packing. When the driver won't emit packed
 headers, FFmpeg warns a global header won't be written → stream may not mux to
 some containers. The engine sets `AV_CODEC_FLAG_GLOBAL_HEADER`
-(`exporter.cpp:377`) which *requests* them; radeonsi newer builds honor it. For
+(`exporter.cpp:804`) which *requests* them; radeonsi newer builds honor it. For
 drivers that refuse, the file still plays in MP4/MKV (in-band SPS/PPS) — treat the
 warning as informational; if a strict muxer rejects, force profile main /
 `packed_headers=1` where the driver exposes it.
 
 **D5. VAAPI encoder rate control ≠ NVENC quality knobs.**
-`-crf` is **not** a VAAPI option. VAAPI routing is `rc_mode` (CQP/ICQ/QVBR/VBR/CBR)
+`-crf` is **not** a VAAPI option. VAAPI routing is `rc_mode` (FFmpeg supports
+CQP/ICQ/QVBR/VBR/CBR, though radeonsi exposes no ICQ — §8.1)
 plus `qp`/`global_quality`, `compression_level`, `maxrate`/`bufsize`.
 Historically VAAPI *ignored* x264-style CRF silently, leaving default rate control.
 *App status:* **fixed.** §8.1 (2026-09-12) maps crf/rc intent onto
@@ -387,7 +399,7 @@ slightly lower compression-efficiency on AMD. No change needed; note it.
 **D8. HDR → SDR, tonemapping, and fixed-function colors.**
 `scale_vaapi`/`procamp_vaapi` don't linearize (iHD #1833; "beyond capabilities of
 fixed-function hardware"). The engine composites in 8-bit BT.709 limited on CPU and
-stamps tags (`exporter.cpp:368–371`) — correct for SDR deliver. If HDR deliver is
+stamps tags (`exporter.cpp:800–803`) — correct for SDR deliver. If HDR deliver is
 ever wanted, do tone-mapping in the CPU/GPU shader path, never in a vaapi filter.
 
 ### E. Environment & packaging
@@ -412,7 +424,7 @@ without it.
 
 ## 8. Engine-specific findings
 
-### 8.1 Export quality-path wiring is NVENC-shaped — VAAPI fix now shipped
+### 8.1 Export quality-path wiring was NVENC-shaped — VAAPI fix now shipped
 FIXED (2026-09-12). The exporter maps crf/rc intent onto VAAPI's
 `rc_mode`/`global_quality`/`qp` knobs via a small Qt-free module,
 `core/include/canvas/core/export/vaapi_encode.hpp` + `core/src/export/vaapi_encode.cpp`:
@@ -420,27 +432,29 @@ FIXED (2026-09-12). The exporter maps crf/rc intent onto VAAPI's
 - `is_vaapi_codec(name)` — true for `*_vaapi` codecs.
 - `vaapi_rate_control_from(codec, crf, vid_rc_mode, bitrate_kbps)` → `VaapiRateControl`:
   - `constqp` + crf≥0 → `rc_mode="CQP"`, `qp=crf*scale`, `global_quality=crf*scale`.
-  - `vbr`/`vbr_target` + crf≥0 → `rc_mode="QVBR"` for hevc/av1,
-    `"ICQ"` for h264 (h264_vaapi has no QVBR — verified, see §4/§7).
-  - `auto` + crf≥0 → `rc_mode="ICQ"`, `global_quality=crf*scale`.
+  - `vbr`/`vbr_target` + crf≥0 → `rc_mode="QVBR"` **only** when a bitrate is set
+    **and** the codec is hevc/av1; otherwise `"CQP"` + `qp=crf*scale`.
+  - `auto` + crf≥0 → `rc_mode="CQP"`, `qp=crf*scale`, `global_quality=crf*scale`.
   - crf<0 + `cbr` → `rc_mode="CBR"`; crf<0 + `vbr*` → `rc_mode="VBR"`;
     crf<0 + `auto` → no rc_mode (driver default).
   - **scale is 1× for h264/hevc (0–51 range), 5× for av1 (0–255 range)**
-    so `crf=23` lands exactly where the VAAPI quality axis expects it.
+    so `crf=23` lands exactly where the VAAPI quality axis expects it (AV1 → 115).
+  - **No `"ICQ"`** anywhere — radeonsi has no ICQ quality mode, so the crf-driven
+    fallback is `CQP` (see §4/§7).
   - `apply_vaapi_rate_control(vctx, rc)` sets `rc_mode` (`av_opt_set`),
     then `qp` + `global_quality` together when crf-driven (`av_opt_set_int`),
-    all into `vctx->priv_data` with `AV_OPT_SEARCH_CHILDREN`; each call's
-    return is checked and a `log_warning` is emitted on `AVERROR_OPTION_NOT_FOUND`
+    all into `vctx->priv_data` (plain — **no** `AV_OPT_SEARCH_CHILDREN`); each
+    call's return is checked and a `log_warning` is emitted on failure
     (D6-class: an absent option is a loud warning, never a hard failure).
   - Called **before** `avcodec_open2`, so `vctx->codec` is still NULL — the
     codec name for diagnostics comes from `avcodec_descriptor_get(vctx->codec_id)`
-    instead (vctx->codec is not open yet).
-- Wiring (`exporter.cpp:380–392`): `crf≥0` now branches — VAAPI codecs get
-  `apply_vaapi_rate_control(...)`, everything else keeps the old
-  `av_opt_set_int(priv, "crf", ...)`. Bitrate-driven mode adds
-  `rc_mode=CBR/VBR` for VAAPI (`exporter.cpp:414–416`), mirroring NVENC's `rc=`.
+    instead.
+- Wiring (`exporter.cpp:806–816`): `crf≥0` branches — VAAPI codecs get
+  `apply_vaapi_rate_control(...)`, QSV gets its own mapping, everything else keeps
+  the old `av_opt_set_int(priv, "crf", ...)`. Bitrate-driven mode adds
+  `rc_mode=CBR/VBR` for VAAPI (`exporter.cpp:831–837`), mirroring NVENC's `rc=`.
 - The pure mapping math is locked by `core/tests/vaapi_encode_test.cpp`
-  (CMake `canvas_vaapi_encode_test`, ctest name `vaapi_encode`): CQP/ICQ/QVBR
+  (CMake `canvas_vaapi_encode_test`, ctest name `vaapi_encode`): CQP/QVBR
   selection, the AV1 ×5 scale (crf 23 → qp/global_quality 115), the crf<0
   CBR/VBR/auto tails, and `is_vaapi_codec` classification. No libva/avcodec
   link needed — the test asserts only the mapping law.
@@ -459,27 +473,36 @@ Untouched (still NVENC-shaped, still fine on VAAPI):
 
 ### 8.2 10-bit export (main10) needs a P010 sw_format
 The VAAPI encode frames context is hardwired `sw_format = NV12`
-(`exporter.cpp:475`). AMD HEVC 10-bit profiles (Main10/Raven Ridge+) consume P010;
+(`exporter.cpp:250`). AMD HEVC 10-bit profiles (Main10/Raven Ridge+) consume P010;
 NV12-only frames context makes a main10 VAAPI export either fail or silently encode
 8-bit. If Main10 is ever offered on the VAAPI path, set
 `fc->sw_format = AV_PIX_FMT_P010` and feed P010 (CPU sws from RGBA yields P010 —
 swscale supports RGBA→P010).
 
-### 8.3 The CUDA-only GPU fast path (§2.2) is a deliberate limit
-- Preview on AMD = VAAPI decode + CPU download + swscale (still a big CPU win:
-  decode offload only; RGBA conversion + upload to viewer are CPU/GL).
-- No `decode_nv12`/`frame_gpu` GPU composite on VAAPI; NVENC-only GPU kernel path.
-- Consequence spelled out: **on AMD, transitions/compositing never touch the GPU**
-  beyond decode. Scaling the preview to more GPU work would mean dmabuf import (C1)
-  or a Vulkan/ROCm compute route — out of scope here; VAAPI plays the decode role.
+### 8.3 The GPU fast path: VAAPI keeps frames on-GPU for presentation only
+- The fast-path predicate `hw_fast_path_pixfmt()` admits `AV_PIX_FMT_VAAPI`
+  (§2.2), and the decode path exports the VA surface as a dma_buf
+  (`VideoDecoder::vaapi_export_surface`, `video_decoder.cpp:775`;
+  `timeline_decoder.cpp:527`). When `VaapiViewerImporter` reports the EGL
+  `EGL_EXT_image_dma_buf_import` extension as available, `ViewerGL` imports the
+  Y/UV planes straight into GL textures and draws them without a CPU round-trip
+  (`viewer_gl.cpp:573–575`, `:816–841`; importer in `vaapi_viewer.cpp`).
+- When that import is unavailable (no EGL/dma_buf ext, or a failed import), the
+  engine falls back to the CPU path: download NV12 → swscale → RGBA and upload to
+  the viewer — correct, just slower.
+- What remains CUDA-only is the **composite/grade kernel** layer (`nv12Resize`,
+  grade LUT, `frame_gpu`, gated at `timeline_decoder.cpp:773`): on AMD the
+  resize/grade/transition math is still CPU swscale. So VAAPI presentation can be
+  zero-copy, but the composite/grade math is not — that would mean a
+  Vulkan/ROCm compute route (out of scope; VAAPI plays the decode role).
 
 ### 8.4 SILENT-FALLBACK audit
 Places hardware silently becomes software are all handled + logged:
 - no decoder for the stream-codec → `avcodec_find_decoder` software
-  (`video_decoder.cpp:424`);
+  (`video_decoder.cpp:311`);
 - hw-decoder configured but driver emits soft frames → `soft_only_` latch + log
-  (`:1081–1096`);
-- no accelerator at all → `no accelerator selected` (`hw_device.cpp:72`).
+  (`video_decoder.cpp:691`, logged `:717`/`:739`);
+- no accelerator at all → `no accelerator selected` (`hw_device.cpp:125`).
 Any "slow preview but no [hw] error" report should be triaged with
 §6's log greps first.
 
@@ -505,8 +528,8 @@ Any "slow preview but no [hw] error" report should be triaged with
   | HW decode | NVDEC (cuvid) | VCN via radeonsi |
   | GPU composite/grade kernel | `nv12Resize`/grade LUT (CUDA) | none (CPU) |
   | HW encode | NVENC (rc/cq/level stamped) | h264/hevc/av1_vaapi (rc_mode/global_quality stamped — §8.1 shipped) |
-  | Zero-copy viewer | CUDA→NV12 plane handoff | CPU RGBA |
-  | Regression gates | `gpu_grade`, `vram_leak`, `scrub_bench` | none today (§10) |
+  | Zero-copy viewer | CUDA→NV12 plane handoff | VA-surface→EGLImage import when EGL+dma_buf ext is available, else CPU RGBA (§8.3) |
+  | Regression gates | `gpu_grade`, `vram_leak`, `scrub_bench` | `vaapi_encode`, `vaapi_driver` (headless) + `vaapi_enc`, `vaapi_enc_bench` (device-bound) — §10 |
 
 ---
 
@@ -522,15 +545,18 @@ Any "slow preview but no [hw] error" report should be triaged with
    for steady-state drain (the `av_frame_ref`-leak class that CAUGHT NVDEC in
    this repo applies identically to VA surfaces).
 4. Colorspace after VAAPI download: decode a BT.709 + a BT.2020 sample, assert the
-   sws-resolved matrix log matches `video_decoder.cpp:1296–1300` selection.
+   sws-resolved matrix log matches the `sw_decode.cpp:474–483` selection.
 5. Seek-mid-GOP VAAPI: frame-accurate target comparison with the software decoder
    (the I-frame re-anchor is the fix; a regression = garbage frames).
 
-No VAAPI encode/decode tests exist yet — the CUDA-only gates
-(`gpu_grade`, `vram_leak`, `visual_render_test`) don't exercise the VAAPI path.
-*Status 2026-09-14:* `vaapi_encode` (rc mapping) and `vaapi_driver` (registry +
-surface ownership, both headless and device-free) now run on every build; the
-device-bound tests above (#1–5) still need an AMD box to stop skipping.
+The CUDA-only gates (`gpu_grade`, `vram_leak`, `visual_render_test`) don't
+exercise the VAAPI path, and the five checklist items above still need to be
+added. *Status 2026-09-17:* `vaapi_encode` (rc mapping) and `vaapi_driver`
+(registry + surface ownership, both headless and device-free) run on every build,
+and the device-bound encode path now has `vaapi_enc` (round-trip on the real
+render node — skip=2 without a working VAAPI encoder) and `vaapi_enc_bench`
+(speed sweep that decodes each output in-process before reporting PASS);
+item #1–5 above remain the open gaps.
 Real-device smoke (ffmpeg against `/dev/dri/renderD128`, Mesa radeonsi,
 2026-09-14): H.264 nv12 → h264_vaapi and HEVC Main + Main10 p010 → hevc_vaapi
 all encode + decode back correctly on gfx1036.
@@ -600,7 +626,7 @@ vainfo
 
 - VAAPI decode = free CPU headroom on AMD/Intel; VAAPI encode = works, but only with
   the right rc_mode configuration and updated Mesa (D1/D2/D5).
-- The app's fixed `max_b_frames=0` + BGRA→NV12 CPU path is the *conservative*
+- The app's fixed `max_b_frames=0` + RGBA→NV12 CPU path is the *conservative*
   profile that dodges D3/D7.
 - Mesa 25.3 removed VDPAU → if a support doc mentions VDPAU for AMD, it is stale.
 - distro packaging (Fedora freeworld, snap-Mesa) is the #1 "hardware just shows up

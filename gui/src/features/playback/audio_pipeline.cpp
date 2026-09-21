@@ -22,6 +22,7 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 bool playback_dbg() {
+    if (!CANVAS_LOGGING) return false;
     static const bool on = [] {
         const char* e = std::getenv("CANVAS_PLAYBACK_DEBUG");
         return e && *e && std::string(e) != "0";
@@ -266,9 +267,8 @@ void AudioPipeline::close_wave_capture() {
 void AudioPipeline::maybe_wave_capture_open_locked() {
     if (wav_capture_f_) return;
     if (wav_capture_disabled_) return;
-    const char* path = wav_capture_path_.empty()
-                           ? std::getenv("CANVAS_DEBUG_CAPTURE_WAV")
-                           : wav_capture_path_.c_str();
+    const char* path = !wav_capture_path_.empty() ? wav_capture_path_.c_str() : nullptr;
+    if (!path && CANVAS_LOGGING) path = std::getenv("CANVAS_DEBUG_CAPTURE_WAV");
     if (!path || !*path) return;
     wav_capture_f_ = std::fopen(path, "wb");
     if (!wav_capture_f_) {

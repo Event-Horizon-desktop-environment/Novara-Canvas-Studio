@@ -63,6 +63,7 @@ public:
     void set_paused(bool paused);
     [[nodiscard]] bool is_paused() const;
     void set_priority(uint64_t id, int priority);
+    void bump_priority(uint64_t id, int delta);
     void restore(const std::vector<RenderJob>& jobs);
     double queue_progress() const;
     bool is_busy() const;

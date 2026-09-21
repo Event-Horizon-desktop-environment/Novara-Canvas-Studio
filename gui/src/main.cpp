@@ -71,8 +71,8 @@ int main(int argc, char* argv[]) {
         << " yuv=bt709 limited yuv2rgb(Y=1.164 R=1.793 G=-0.213/-0.533 B=2.112)";
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("canvas"));
-    QApplication::setApplicationDisplayName(QStringLiteral("Nova Canvas Studio"));
-    QApplication::setOrganizationName(QStringLiteral("Nova Canvas"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Novara Canvas Studio"));
+    QApplication::setOrganizationName(QStringLiteral("Novara Canvas"));
 
     {
         const QSettings settings;

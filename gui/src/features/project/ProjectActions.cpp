@@ -649,7 +649,7 @@ void MainWindow::on_new_project() {
     QSettings().setValue(QStringLiteral("mediaRootDir"), media);
 
     if (!ensure_project_roots()) {
-        status_->showMessage(tr("Could not create the Nova Canvas Studio folders."), 8000);
+        status_->showMessage(tr("Could not create the Novara Canvas Studio folders."), 8000);
         return;
     }
 
@@ -665,19 +665,19 @@ void MainWindow::on_new_project() {
     refresh_media_pool();
     refresh_timeline();
     push_snapshot(0);
-    setWindowTitle(tr("Nova Canvas Studio — %1").arg(name));
+    setWindowTitle(tr("Novara Canvas Studio — %1").arg(name));
     save_project_to(path);
 }
 
 void MainWindow::on_open_project() {
     leave_project_manager();
     const QString path = QFileDialog::getOpenFileName(this, tr("Open Project"), QString(),
-                                                      tr("Nova Canvas Project (*.ncs);;Legacy Project (*.ehproj);;All Files (*)"));
+                                                      tr("Novara Canvas Project (*.ncs);;Legacy Project (*.ehproj);;All Files (*)"));
     if (path.isEmpty()) return;
     open_file(path);
 }
 
-bool MainWindow::save_project_to(const QString& path) {
+bool MainWindow::write_project_file(const QString& path) {
     if (deliver_settings_) project_->deliver_settings = deliver_settings_->settings();
     const auto jobs = render_queue_.jobs();
     project_->render_jobs.clear();
@@ -692,12 +692,55 @@ bool MainWindow::save_project_to(const QString& path) {
         status_->showMessage(tr("Save failed: %1").arg(QString::fromStdString(error)), 8000);
         return false;
     }
+    return true;
+}
+
+bool MainWindow::save_project_to(const QString& path) {
+    if (!write_project_file(path)) return false;
     has_unsaved_changes_ = false;
     project_path_ = path;
     remember_recent_project(path);
     qWarning().nospace() << "[proj] SAVED '" << path << "'";
     status_->showMessage(tr("Saved project to %1").arg(path), 5000);
     return true;
+}
+
+void MainWindow::on_archive_project() {
+    if (!project_) return;
+
+    QString suggested = project_path_;
+    if (suggested.isEmpty()) {
+        QString name = QString::fromStdString(project_->name).trimmed();
+        if (name.isEmpty()) name = tr("Untitled");
+        suggested = name + QStringLiteral(".ncs");
+    }
+    const QFileInfo info(suggested);
+    const QString archive_default = info.absolutePath() + QLatin1Char('/') +
+                                    info.completeBaseName() + QStringLiteral(".archive.ncs");
+
+    QString path = QFileDialog::getSaveFileName(this, tr("Archive Project"), archive_default,
+                                                tr("Novara Canvas Project (*.ncs);;All Files (*)"));
+    if (path.isEmpty()) return;
+    if (!path.endsWith(QStringLiteral(".ncs"))) path += QStringLiteral(".ncs");
+
+    if (!write_project_file(path)) return;
+
+    const QString manifest_path = path + QStringLiteral(".manifest.txt");
+    QFile manifest(manifest_path);
+    if (!manifest.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        status_->showMessage(
+            tr("Archived project, but the media manifest could not be written: %1")
+                .arg(manifest_path),
+            8000);
+        return;
+    }
+    const std::string text = canvas::core::autosave::media_manifest(*project_);
+    (void)manifest.write(text.data(), static_cast<qint64>(text.size()));
+    manifest.close();
+
+    qWarning().nospace() << "[proj] ARCHIVED '" << path << "' manifest='" << manifest_path << "'";
+    status_->showMessage(
+        tr("Archived project to %1 (manifest: %2)").arg(path, manifest_path), 8000);
 }
 
 void MainWindow::maybe_autosave() {
@@ -746,7 +789,7 @@ void MainWindow::on_save_project_as() {
         suggested = name + QStringLiteral(".ncs");
     }
     QString path = QFileDialog::getSaveFileName(this, tr("Save Project As"), suggested,
-                                                tr("Nova Canvas Project (*.ncs);;All Files (*)"));
+                                                tr("Novara Canvas Project (*.ncs);;All Files (*)"));
     if (path.isEmpty()) return;
     if (!path.endsWith(QStringLiteral(".ncs"))) path += QStringLiteral(".ncs");
     save_project_to(path);
@@ -812,7 +855,7 @@ void MainWindow::open_file(const QString& path) {
         render_queue_.set_active_project(
             std::make_shared<const canvas::core::Project>(*project_), {});
         reflect_render_queue();
-        setWindowTitle(tr("Nova Canvas Studio — %1").arg(QString::fromStdString(project_->name)));
+        setWindowTitle(tr("Novara Canvas Studio — %1").arg(QString::fromStdString(project_->name)));
         status_->showMessage(tr("Opened project %1").arg(path), 5000);
     } else {
         status_->showMessage(tr("Failed to open project: %1").arg(QString::fromStdString(error)), 8000);

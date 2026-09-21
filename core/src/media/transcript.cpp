@@ -1,5 +1,6 @@
 #include "canvas/core/media/transcript.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -15,7 +16,7 @@ int64_t clamp_ms(int64_t ms) {
 
 void append_srt_time(std::string& out, int64_t ms) {
     const int64_t t = clamp_ms(ms);
-    const int64_t hours = t / (3600 * 1000);
+    const int64_t hours = std::min<int64_t>(t / (3600 * 1000), 99);
     const int64_t minutes = (t / (60 * 1000)) % 60;
     const int64_t seconds = (t / 1000) % 60;
     const int64_t millis = t % 1000;

@@ -24,11 +24,11 @@
 namespace canvas::gui {
 
 void build_app_menus(MainWindow& mw) {
-    auto* canvas_menu = mw.ui->menubar->addMenu(MainWindow::tr("Nova Canvas"));
-    canvas_menu->addAction(MainWindow::tr("&About Nova Canvas Studio"), &mw, [&mw] {
+    auto* canvas_menu = mw.ui->menubar->addMenu(MainWindow::tr("Novara Canvas"));
+    canvas_menu->addAction(MainWindow::tr("&About Novara Canvas Studio"), &mw, [&mw] {
         QMessageBox::about(
-            &mw, MainWindow::tr("About Nova Canvas Studio"),
-            MainWindow::tr("Nova Canvas Studio\n\n"
+            &mw, MainWindow::tr("About Novara Canvas Studio"),
+            MainWindow::tr("Novara Canvas Studio\n\n"
                            "C++20 / Qt %1 / FFmpeg nonlinear video editor — "
                            "dark, editor-grade UI.\n\n"
                            "Ships an auto-detected \u201cHyprDark\u201d palette that "
@@ -82,7 +82,7 @@ void build_app_menus(MainWindow& mw) {
     canvas_menu->addAction(MainWindow::tr("&Preferences..."), QKeySequence::Preferences,
                            &mw, show_preferences);
     canvas_menu->addSeparator();
-    canvas_menu->addAction(MainWindow::tr("&Quit Nova Canvas Studio"), QKeySequence::Quit,
+    canvas_menu->addAction(MainWindow::tr("&Quit Novara Canvas Studio"), QKeySequence::Quit,
                            qApp, &QApplication::quit);
 
     auto* file = mw.ui->menubar->addMenu(MainWindow::tr("&File"));
@@ -95,6 +95,7 @@ void build_app_menus(MainWindow& mw) {
                     &mw, &MainWindow::enter_project_manager);
     file->addAction(MainWindow::tr("&Save Project"), QKeySequence::Save, &mw, &MainWindow::on_save_project);
     file->addAction(MainWindow::tr("Save Project &As..."), QKeySequence::SaveAs, &mw, &MainWindow::on_save_project_as);
+    file->addAction(MainWindow::tr("&Archive Project..."), &mw, &MainWindow::on_archive_project);
     file->addSeparator();
     file->addAction(MainWindow::tr("&Import Media..."), QKeySequence(Qt::CTRL | Qt::Key_I), &mw,
                     &MainWindow::on_import_media);
@@ -218,7 +219,7 @@ void build_app_menus(MainWindow& mw) {
     for (const char* name : {"Fusion", "Color", "Fairlight", "Workspace", "Help"}) {
         auto* m = mw.ui->menubar->addMenu(MainWindow::tr(name));
         if (qstrcmp(name, "Help") == 0) {
-            QAction* help_item = m->addAction(MainWindow::tr("Nova Canvas Studio Help"));
+            QAction* help_item = m->addAction(MainWindow::tr("Novara Canvas Studio Help"));
             help_item->setEnabled(false);
         } else if (qstrcmp(name, "Workspace") == 0) {
             m->addAction(MainWindow::tr("Reset UI Layout"));

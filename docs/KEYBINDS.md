@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-The current set as of September 2026. Binds live in two places: the File/Edit/Trim/Timeline/Clip/Mark/View/Playback menus (ShellMenus.cpp) and the raw key handler on MainWindow (AppActions.cpp). Some calls like Undo/Redo and Play/Pause exist in both; they do the same thing either way.
+The current set as of September 2026. Binds live in two places: the Novara Canvas/File/Edit/Trim/Timeline/Clip/Mark/View/Playback menus (ShellMenus.cpp) and the raw key handler on MainWindow (AppActions.cpp). Some calls like Undo/Redo and Play/Pause exist in both; they do the same thing either way. A few menu entries advertise a shortcut but are not wired to a handler yet — those are called out below.
 
 A note on modifiers: "CTRL" means the Control key (on Linux that's Ctrl). Where a key is shown bare (like `M`) it works without any modifier. The Shift-combined frame-step uses a whole second's worth of frames — whatever the project FPS is.
 
@@ -10,13 +10,14 @@ A note on modifiers: "CTRL" means the Control key (on Linux that's Ctrl). Where 
 | --- | --- |
 | `CTRL+N` | New project |
 | `CTRL+O` | Open project |
+| `CTRL+SHIFT+M` | Project Manager |
 | `CTRL+S` | Save project |
 | `CTRL+SHIFT+S` | Save project as |
 | `CTRL+I` | Import media |
 | `CTRL+Q` | Quit |
 | `CTRL+,` | Preferences (opens the dialog; more on that below) |
 
-The recent-files list is under File > Open Recent. The `CTRL+,` Preferences entry opens the Settings dialog (Nova Canvas > Preferences...), which groups the app-level settings: audible scrubbing, the hardware-decoder backend preference, and live accent / playhead colour overrides that persist across launches.
+The recent-files list is under File > Open Recent. The `CTRL+,` Preferences entry opens the Settings dialog (Novara Canvas > Preferences...), which groups the app-level settings: audible scrubbing, the hardware-decoder backend preference, and live accent / playhead colour overrides that persist across launches.
 
 ## Editing
 
@@ -24,27 +25,25 @@ The recent-files list is under File > Open Recent. The `CTRL+,` Preferences entr
 | --- | --- |
 | `CTRL+Z` | Undo |
 | `CTRL+SHIFT+Z` | Redo |
+| `CTRL+K` | Find Action (searchable command palette) |
 | `CTRL+D` | Toggle disable / enable the selected clip |
 | `CTRL+T` | Add a transition on the selected clip |
-| `CTRL+ALT+L` | Link / unlink a selected clip pair |
+| `CTRL+ALT+T` | Add a title clip |
 | `DEL` | Ripple delete the selected clip |
 | `SHIFT+DEL` | Lift (delete, keeping the gap) |
 | `BACKSPACE` | Lift (same as SHIFT+DEL) |
-| `CTRL+BACKSLASH` | Add edit (split at playhead) |
-| `U` | Cycle edit point side |
 
 `DEL` here is the timeline meaning. If the media pool has focus and items are selected, `DEL` deletes the pool items and ripple-deletes any clip selected on the timeline at once; `BACKSPACE` deletes only the pool items. When a transition bubble is selected on the timeline, `DEL` / `BACKSPACE` clear the transition rather than deleting a clip.
+
+Declared in a menu but not wired to a handler yet: `CTRL+BACKSLASH` (Timeline > Add Edit), `CTRL+ALT+L` (Clip > Link/Unlink), and `U` (Trim > Cycle Edit Point Side). Link/unlink is reachable from the timeline right-click menu; Add Edit and cycle-edit-point have no working path at all.
 
 ## Markers and in/out points
 
 | Keys | Action |
 | --- | --- |
 | `M` | Toggle a bookmark at the playhead |
-| `I` | Set Mark In |
-| `O` | Set Mark Out |
-| `ALT+X` | Clear in/out markers |
 
-Note that bare `I` is also bound to the inspector toggle in the View menu, so the two collide — Mark In and Inspector both listen for `I`. The key handler on MainWindow intercepts `I` for Mark In before the menu shortcut runs in most focus states, but this overlap is a known wart and one of the two should move.
+The Mark menu also lists Mark In (`I`), Mark Out (`O`), and Clear In/Out (`ALT+X`), and the transport bar has Mark In / Mark Out buttons, but none of them are wired to a handler yet — the 3-point editing GUI (source/timeline marks) is still pending (`docs/PHASE1.md`, E2). Bare `I` is also assigned to the View > Inspector toggle, so the shortcut is ambiguous between a working action and the unimplemented one; one of the two should move.
 
 ## Timeline view
 
@@ -84,10 +83,11 @@ These place whatever is selected in the media pool with a specific insert mode:
 | Keys | Action |
 | --- | --- |
 | `E` | Append at end |
-| `INS` | Insert (no keypad modifier) |
 | `F9` | Insert |
 | `F10` | Overwrite |
 | `F12` | Place on top |
+
+`INS` no longer places a clip — the key handler swallows it without doing anything, so use `F9` to insert.
 
 ## Application
 

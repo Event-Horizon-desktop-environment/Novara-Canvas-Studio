@@ -24,6 +24,7 @@ struct EqBand {
     float frequency = 1000.0f;
     float gain = 0.0f;
     float q = 1.0f;
+    bool enabled = true;            // per-band bypass
 };
 bool eq_enabled = false;
 std::array<EqBand, 6> eq_bands;
@@ -61,11 +62,11 @@ All follow existing snapshot-based undo pattern. Linked mates inherit values.
 
 | # | Category | Controls | Wired |
 |---|----------|----------|-------|
-| 1 | Audio (Volume/Pan) | Volume dB spin (-60..+24), Pan spin (-1..+1) | Yes (moved from ShellDocks) |
+| 1 | Audio (Volume/Pan) | Volume dB spin+slider (-100..+100), Pan spin+slider (`kPanMin..kPanMax`) | Yes (moved from ShellInspectorDock) |
 | 2 | Pitch | Semi Tones spin+slider (-12..+12), Cents spin+slider (-100..+100) | Yes — now audible (2026-09-11: windowed-sinc SRC front-end in the retime engine) |
 | 3 | Speed Change | Enable toggle, Speed factor spin+slider (0.1..10.0) | Yes |
 | 4 | Equalizer | Enable toggle, EQ graph widget, 6 bands × (type/freq/gain/Q) | Yes |
-| 5 | AI Voice Isolation | Enable toggle (placeholder), Amount slider | No (UI only) |
+| 5 | AI Voice Isolation | Isolate combo (None / RNNoise / DeepFilterNet) | Yes — RNNoise shipped; DeepFilterNet greyed (not built in this build) |
 | 6 | AI Dialogue Leveler | Enable toggle (placeholder) | No (UI only) |
 | 7 | AI Music Remixer | Enable toggle (placeholder) | No (UI only) |
 
@@ -75,22 +76,24 @@ Flat — enabling EQ is silent until the user shapes it. All six bands are
 Bell @ 1 kHz, 0 dB, Q 1.0 (a bit-exact pass-through until edited).
 
 ### Key behavior:
-- Tab **only enabled** when audio clip selected (`clip->kind == Track::Kind::Audio`)
-- Video clip selected → tab greys out or shows only Volume/Pan
+- Tab **enabled** whenever the selection resolves at least one audio target
+  (`resolve_audio_targets`) — a direct audio clip, a video clip with a linked audio
+  mate, or a second-track audio selection. A video-only clip greys the tab.
+- Multi-select with >1 audio target shows the "Volume/Pan apply to all" hint.
 - All changes via `set_clip_audio_processing` → undo → snapshot push
 
 ### Interactive EQ graph (`EqGraphWidget` in `InspectorAudio.cpp`):
-- **View toggle** above the graph switches between **Curve** (classic node graph) and **EasyEffects** (six vertical gain-fader columns). Selection is shared across both views.
+- **View toggle** above the graph switches between **Curve** (classic node graph) and **Faders** (six vertical gain-fader columns). Selection is shared across both views.
 - **Curve view:**
   - **Drag a node** = frequency + gain together; **Shift = frequency only**; **Ctrl/Alt = gain only**.
   - **Mouse wheel** over a node (else over the selected band) = Q in log steps (~1.15×/notch, 0.1 → 10); the scroll settles for 240 ms then records **one** undoable edit.
   - **Click** selects a node (accent ring + the matching B-label takes the band hue in the row); clicking empty plot clears selection.
   - **Double-click** toggles the band's per-band bypass (`EqBand.enabled`, persisted) — disabled nodes render hollow/dim and drop out of the cascade curve.
-- **EasyEffects view:**
-  - Each of the six columns is one band's **vertical gain fader**, laid out exactly like EasyEffects' band columns.
+- **Faders view:**
+  - Each of the six columns is one band's **vertical gain fader**, laid out like EasyEffects' band columns.
   - **Drag a fader** = that band's gain (the only axis; the fader is pinned to 0 dB for LowPass/HighPass).
   - **Mouse wheel** over a column = Q, same log-step + 240 ms commit as the curve.
-  - **Click** the column selects the band; **double-click** its top dot toggles the band's bypass.
+  - **Click** the column selects the band; **double-click** the column toggles the band's bypass.
 - **LowPass/HighPass** have no gain knob: the node/fader is pinned to the 0 dB line, vertical drag is refused, and the row gain spinbox greys out.
 - Live row ↔ graph echo (spins update during a drag, graph repaints on spin edits); each gesture settles into exactly one `set_clip_audio_processing` commit.
 - Curve is the true 6-band cascade magnitude (`equalizer_response`, shares `band_filters()` with the DSP), excluding bypassed bands.
@@ -107,21 +110,19 @@ Top: **Start / End** sub-tab pill row (exclusive QButtonGroup)
 
 **Start view (default):**
 - **Video** category:
-  - Transition Type: QComboBox (Cross Dissolve, DipToBlack, FadeOut, FadeIn, Wipe*)
+  - Transition Type: QComboBox (None, Cross Dissolve, Dip To Black, Video Fade Out, Video Fade In, Wipe Left/Right/Up/Down)
   - Duration: seconds + frames display, editable
   - "Set as Default Duration" button
   - Alignment: 3-button group (left/center/right)
-  - Style: QComboBox (Video)
+  - Style: QComboBox (Standard, Soft, Smooth, Sleek, Glossy)
   - Start/End Ratio: slider + spin (0..100)
   - Ease: QComboBox (None, Ease In, Ease Out, Ease In-Out)
   - Transition Curve: slider + spin (0.000..1.000), keyframe nav, reset
 
 - **Audio** category:
-  - Transition Type: QComboBox (Cross Fade 0/3/6 dB)
-  - Duration: seconds + frames
-  - "Set as Default Duration" button (disabled)
-  - Alignment: 3-button group
-  - Fade In/Out: QComboBox (0/3/6 dB)
+  - Fade Out: QComboBox (None, Constant Gain, Constant Power, Exponential)
+  - Fade In: QComboBox (None, Constant Gain, Constant Power, Exponential)
+  - Duration: seconds + frames display, editable
 
 **End view:** Same structure, different defaults (center-aligned, curve=0.000)
 
@@ -142,16 +143,16 @@ Top: **Start / End** sub-tab pill row (exclusive QButtonGroup)
 
 | # | Category | Controls | Wired |
 |---|----------|----------|-------|
-| 1 | Header Info | Read-only labels (filename, duration, codecs, fps, resolution, sample rate) | Read-only |
-| 2 | Metadata | Timecode, tag (3-button), color (swatch row), name, comments | Yes |
-| 3 | Audio Configuration | Format combo, channel rows, play/stop, level | Partial |
-| 4 | Timecode | Current frame, slate, offset | Read-only |
+| 1 | Header Info | Read-only labels (Media, Path, Video Res, Frame Rate, Video Streams, Audio Streams, Source TC, TC Rate) | Read-only |
+| 2 | Metadata | Timecode, tag combo (None / Good Take / Rejected), color (swatch row), name, comments | Yes |
+| 3 | Audio Configuration | Channel rows (disabled play button + level bar), hint when the source has no audio | Partial |
+| 4 | Timecode | Current Timecode, Slate, Offset (read-only) | Read-only |
 
 ### Editable fields wired via `set_clip_metadata`:
-- Tag: Good Take / Untagged / Rejected toggle
+- Tag: None / Good Take / Rejected combo
 - Color: 12-swatch row + clear button
 - Name: QLineEdit
-- Comments: QTextEdit
+- Comments: QPlainTextEdit (Notes)
 
 ### Key behavior:
 - Header info probed from `VideoDecoder::open()` (cached per media)
@@ -165,7 +166,7 @@ Top: **Start / End** sub-tab pill row (exclusive QButtonGroup)
 - Friend declarations for all 3 new modules (build/attach/update/apply)
 - Member variables: `transition_inspector_active_`, `transition_inspector_kind_`, `transition_inspector_track_`, `transition_inspector_clip_`, `transition_inspector_in_edge_`
 
-### ShellDocks.cpp changes:
+### ShellInspectorDock.cpp changes:
 - Replace placeholder loop with calls to `build_inspector_transition()` and `build_inspector_file()`
 - Audio page delegates to `build_inspector_audio()` for new categories
 
@@ -204,7 +205,7 @@ Add `InspectorAudio.cpp`, `InspectorTransition.cpp`, `InspectorFile.cpp`
 | `gui/src/UX/InspectorFile.hpp` | NEW | 4 |
 | `gui/src/UX/InspectorFile.cpp` | NEW (~300 lines) | 4 |
 | `gui/src/UX/MainWindow.hpp` | Add friends + members | 5 |
-| `gui/src/UX/ShellDocks.cpp` | Replace placeholders | 5 |
+| `gui/src/UX/ShellInspectorDock.cpp` | Replace placeholders | 5 |
 | `gui/src/features/timeline/TimelineActions.cpp` | Add signal handlers | 5 |
 | `gui/CMakeLists.txt` | Add 3 new .cpp | 5 |
 
@@ -213,10 +214,14 @@ Add `InspectorAudio.cpp`, `InspectorTransition.cpp`, `InspectorFile.cpp`
 ## Status: all phases done + verified (2026-09-06)
 
 Phases 1–6 are complete. Verified on this machine: Release and Debug builds are
-zero-warning, `ctest --test-dir build` passes **13/13** (incl. the new
-`visual_render_test`, which also exposed + fixed a half-pixel sampling bug in
+zero-warning, and `./scripts/check_qtdep.sh` passes. When this status was written
+(2026-09-06) the suite was **13/13** (incl. the then-new `visual_render_test`,
+which also exposed + fixed a half-pixel sampling bug in
 `blit_rgba_transformed`: it now samples at pixel centres so pure
-flips/identity are byte-exact), and `./scripts/check_qtdep.sh` passes.
+flips/identity are byte-exact). The suite has since grown to **77 tests**
+(verified 2026-09-17); all pass except the two Vulkan-runtime WIP stubs
+(`scrub_bench_vulkan_test`, `visual_render_parity_test`), which are
+SKIP-as-fail pending the Vulkan kernels, not inspector regressions.
 
 Deviation notes vs. the plan above (all deliberate, documented in code):
 
@@ -227,10 +232,15 @@ Deviation notes vs. the plan above (all deliberate, documented in code):
   `audio_mix::pan_gains` law, mono upmix at non-center). Without that the field
   only round-tripped.
 
-- **Audio tab gating:** the Audio page is enabled only when an audio-kind clip
-  is selected (per-user decision); a video clip selection greys the whole tab.
-  Waveform transparency/reflect is NOT implemented (deferred). AI sections are
-  UI-only placeholders. EQ Q control is visible only for Bell/HighPass/Notch.
+- **Audio tab gating:** the Audio page is enabled whenever the current selection
+  resolves at least one audio target (`resolve_audio_targets`: a direct audio
+  clip, a video clip's linked audio mate, or a second-track selection); a
+  video-only clip greys the tab. Multi-select with >1 target shows the
+  "Volume/Pan apply to all" hint. Waveform transparency/reflect is NOT
+  implemented (deferred). AI Voice Isolation is wired (`set_clip_voice_isolation`;
+  RNNoise shipped, DeepFilterNet reserved/greyed), while AI Dialogue Leveler and
+  AI Music Remixer remain UI-only placeholders. The **gain** spinbox greys out for
+  LowPass/HighPass; Q is available for every band type.
 - **Transition tab:** uses `TimelineWidget::transition_selected` +
   `transition_selection_cleared` (new signals emitted from
   `select_transition_bubble` / `clear_selected_transition`, with
@@ -245,8 +255,8 @@ Deviation notes vs. the plan above (all deliberate, documented in code):
   "Set as Default Duration" stores a UI-side default per edge only.
 - **File tab:** Header Info reads the `MediaEntry` (streams auto-detected from
   the clip kind / linked audio mate) rather than `VideoDecoder::open`; the
-  per-channel play/stop buttons are disabled in this build ("not connected").
+  per-channel play button is disabled in this build ("not connected").
   Timecode editing relocates the clip via `move_clip`.
 - **Existing-test win:** adding `EqBand::operator==` (required by the audio
   inspector's dirty check) also fixed the long-standing `roundtrip` SEGFAULT
-  (stale-timeline crash), so all 13 tests now pass.
+  (stale-timeline crash), so the suite is green today (77 tests, 2026-09-17).

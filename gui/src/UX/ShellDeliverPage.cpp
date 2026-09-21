@@ -45,6 +45,14 @@ void build_deliver_docks(MainWindow& mw) {
     QObject::connect(mw.deliver_queue_panel_, &RenderQueuePanel::job_remove_clicked, &mw,
             [&mw](uint64_t id) { mw.render_queue_.remove(id); mw.has_unsaved_changes_ = true;
                                  mw.reflect_render_queue(); });
+    QObject::connect(mw.deliver_queue_panel_, &RenderQueuePanel::job_priority_up, &mw,
+            [&mw](uint64_t id) { mw.render_queue_.bump_priority(id, +1);
+                                 mw.has_unsaved_changes_ = true;
+                                 mw.reflect_render_queue(); });
+    QObject::connect(mw.deliver_queue_panel_, &RenderQueuePanel::job_priority_down, &mw,
+            [&mw](uint64_t id) { mw.render_queue_.bump_priority(id, -1);
+                                 mw.has_unsaved_changes_ = true;
+                                 mw.reflect_render_queue(); });
     QObject::connect(mw.deliver_queue_panel_, &RenderQueuePanel::cancel_all_clicked, &mw,
             [&mw] { mw.render_queue_.cancel_all(); mw.has_unsaved_changes_ = true;
                     mw.reflect_render_queue(); });

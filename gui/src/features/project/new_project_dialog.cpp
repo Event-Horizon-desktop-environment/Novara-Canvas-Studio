@@ -21,13 +21,13 @@ QString default_projects_root() {
     if (!override.isEmpty()) return override;
     QString base = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
     if (base.isEmpty()) base = QDir::homePath();
-    return base + QStringLiteral("/Nova Canvas Studio");
+    return base + QStringLiteral("/Novara Canvas Studio");
 }
 
 QString default_media_root() {
     const QString saved = QSettings().value(QStringLiteral("mediaRootDir")).toString();
     if (!saved.isEmpty()) return saved;
-    return QDir::home().filePath(QStringLiteral("Nova Canvas Studio"));
+    return QDir::home().filePath(QStringLiteral("Novara Canvas Studio"));
 }
 
 bool ensure_project_roots() {

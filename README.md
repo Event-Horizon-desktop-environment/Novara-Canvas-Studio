@@ -1,4 +1,4 @@
-# Nova Canvas Studio
+# Novara Canvas Studio
 
 A Linux-only, and will stay linux only! Windows has too many windows and it's time for linux to have it's own software
 source-built **nonlinear video editor** with a dark, tool-grade
@@ -7,17 +7,20 @@ linked A/V editing, hardware-accelerated decode and encode, and a headless
 engine tested separately from the GUI. LTS distro's will not support this video editor unless it's modern. 
 
 
-C++20, Qt 6, FFmpeg. No network builds, no vendored code in the build — it
-compiles from your system packages.
+C++20, Qt 6, FFmpeg. It builds from your system packages; the only fetched
+dependency is whisper.cpp via CMake `FetchContent` (network needed on the first
+configure), plus an in-tree copy of rnnoise for voice isolation.
 
 ## Status
 
-Alpha, very much in motion. As of 2026-09-16 the app builds warning-free
+Alpha, very much in motion. As of 2026-09-17 the app builds warning-free
 (Debug + Release), the 77-test suite passes except for two Vulkan
-render-kernel SKIP stubs, and the current feature surface is catalogued in
+render-kernel SKIP-as-fail WIP stubs (75/77), and the current feature
+surface is catalogued in
 [docs/FEATURES.md](docs/FEATURES.md). The project was renamed (from Event
-Horizon Studio) to **Nova Canvas Studio** — binary `canvas`, project files
-still read the legacy format. Details, honesty included, live in
+Horizon Studio, via Nova Canvas Studio) to **Novara Canvas Studio** — binary
+`canvas`, project files still read the legacy format. Details, honesty
+included, live in
 [Current State](docs/CURRENT-STATE.md).
 
 ## Quick start

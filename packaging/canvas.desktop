@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Nova Canvas Studio
+Name=Novara Canvas Studio
 GenericName=Video Editor
 Comment=Nonlinear video editor
 Exec=canvas %F

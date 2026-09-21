@@ -56,6 +56,22 @@ void test_skips_non_queued() {
     check(queue_policy::next_candidate(jobs) == 1, "non-queued high priority skipped");
 }
 
+void test_priority_clamp() {
+    check(queue_policy::clamp_priority(0) == 0, "clamp: in-range unchanged");
+    check(queue_policy::clamp_priority(queue_policy::kPriorityMax) ==
+              queue_policy::kPriorityMax,
+          "clamp: max kept");
+    check(queue_policy::clamp_priority(queue_policy::kPriorityMin) ==
+              queue_policy::kPriorityMin,
+          "clamp: min kept");
+    check(queue_policy::clamp_priority(queue_policy::kPriorityMax + 1) ==
+              queue_policy::kPriorityMax,
+          "clamp: above max pinned to max");
+    check(queue_policy::clamp_priority(queue_policy::kPriorityMin - 1) ==
+              queue_policy::kPriorityMin,
+          "clamp: below min pinned to min");
+}
+
 }
 
 int main() {
@@ -64,6 +80,7 @@ int main() {
     test_priority_inversion();
     test_stable_tie();
     test_skips_non_queued();
+    test_priority_clamp();
 
     if (failures == 0) {
         std::printf("ALL TESTS PASSED\n");

@@ -42,6 +42,7 @@ inline const char* color_log_path() {
 }
 
 inline void color_log(const char* fmt, ...) {
+    if (!CANVAS_LOGGING) return;
     static std::mutex m;
     std::lock_guard<std::mutex> lk(m);
     static FILE* f = [] {

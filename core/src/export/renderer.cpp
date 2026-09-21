@@ -797,13 +797,12 @@ AudioChunkPtr RenderSession::audio_chunk(int64_t tl_sample, int num_frames,
         static long _d_call = 0;
         const bool _d_back = (_d_call > 0) && (_n > 0) && (start_media_sample <= _d_last_sample);
         if (_d_call < 60 || _short || _d_back) {
-            std::fprintf(stderr,
-                         "[AUDIO-DIAG] call=%ld tl_sample=%lld tl_frame=%lld src_frame=%lld "
-                         "media_sample=%lld req=%d got=%d%s%s\n",
-                         _d_call, (long long)tl_sample, (long long)start_tl_frame,
-                         (long long)src_frame, (long long)start_media_sample,
-                         (int)num_frames, _got,
-                         _short ? " <SHORTFALL>" : "", _d_back ? " <BACKJUMP>" : "");
+            CANVAS_LOG("AUDIO-DIAG call=%ld tl_sample=%lld tl_frame=%lld src_frame=%lld "
+                       "media_sample=%lld req=%d got=%d%s%s",
+                       _d_call, (long long)tl_sample, (long long)start_tl_frame,
+                       (long long)src_frame, (long long)start_media_sample,
+                       (int)num_frames, _got,
+                       _short ? " <SHORTFALL>" : "", _d_back ? " <BACKJUMP>" : "");
         }
         _d_last_sample = start_media_sample;
         ++_d_call;
