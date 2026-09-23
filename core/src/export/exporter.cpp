@@ -106,6 +106,94 @@ bool is_hw_pix_fmt(AVPixelFormat f) {
            f == AV_PIX_FMT_DRM_PRIME || f == AV_PIX_FMT_D3D11;
 }
 
+struct ExportHwCache {
+    std::mutex mtx;
+    std::vector<std::pair<std::string, ::AVBufferRef*>> devices;
+    std::string pool_key;
+    ::AVBufferRef* pool_dev = nullptr;
+    ::AVBufferRef* pool_frames = nullptr;
+};
+
+ExportHwCache& export_hw_cache() {
+    static ExportHwCache cache;
+    return cache;
+}
+
+bool export_hw_pool_acquire(const std::string& hw_device, const std::string& gpu_arg,
+                            AVPixelFormat hw_pix, int w, int h,
+                            ::AVBufferRef** out_dev, ::AVBufferRef** out_frames) {
+    const std::string dev_key = hw_device + "|" + gpu_arg;
+    const std::string key = dev_key + "|" + std::to_string(static_cast<int>(hw_pix)) +
+                            "|" + std::to_string(w) + "x" + std::to_string(h);
+    ExportHwCache& cache = export_hw_cache();
+    std::lock_guard<std::mutex> lk(cache.mtx);
+    if (!cache.pool_key.empty() && cache.pool_key == key && cache.pool_frames) {
+        ::AVBufferRef* dev = av_buffer_ref(cache.pool_dev);
+        ::AVBufferRef* fr = av_buffer_ref(cache.pool_frames);
+        if (dev && fr) {
+            *out_dev = dev;
+            *out_frames = fr;
+            return true;
+        }
+        av_buffer_unref(&dev);
+        av_buffer_unref(&fr);
+        return false;
+    }
+    ::AVBufferRef* dev = nullptr;
+    for (const auto& e : cache.devices) {
+        if (e.first == dev_key && e.second) {
+            dev = av_buffer_ref(e.second);
+            break;
+        }
+    }
+    if (!dev) {
+        const AVHWDeviceType dt = av_hwdevice_find_type_by_name(hw_device.c_str());
+        if (dt == AV_HWDEVICE_TYPE_NONE) return false;
+        ::AVBufferRef* created = nullptr;
+        if (av_hwdevice_ctx_create(&created, dt, gpu_arg.empty() ? nullptr : gpu_arg.c_str(),
+                                   nullptr, 0) < 0 ||
+            !created)
+            return false;
+        cache.devices.emplace_back(dev_key, created);
+        dev = av_buffer_ref(created);
+        if (!dev) return false;
+    }
+    ::AVBufferRef* fr = av_hwframe_ctx_alloc(dev);
+    bool ok = false;
+    if (fr) {
+        AVHWFramesContext* fc = reinterpret_cast<AVHWFramesContext*>(fr->data);
+        if (fc) {
+            fc->format = hw_pix;
+            fc->sw_format = AV_PIX_FMT_NV12;
+            fc->width = w;
+            fc->height = h;
+            fc->initial_pool_size = 12;
+        }
+        ok = av_hwframe_ctx_init(fr) == 0;
+    }
+    if (!ok) {
+        av_buffer_unref(&fr);
+        av_buffer_unref(&dev);
+        return false;
+    }
+    av_buffer_unref(&cache.pool_dev);
+    av_buffer_unref(&cache.pool_frames);
+    cache.pool_key = key;
+    cache.pool_dev = av_buffer_ref(dev);
+    cache.pool_frames = av_buffer_ref(fr);
+    if (!cache.pool_dev || !cache.pool_frames) {
+        av_buffer_unref(&cache.pool_dev);
+        av_buffer_unref(&cache.pool_frames);
+        cache.pool_key.clear();
+        av_buffer_unref(&fr);
+        av_buffer_unref(&dev);
+        return false;
+    }
+    *out_dev = dev;
+    *out_frames = fr;
+    return true;
+}
+
 struct GpuGradeLut {
     const grade_graph::GradeLut3D* baked = nullptr;
     void* dev = nullptr;
@@ -232,34 +320,19 @@ public:
         out_h = h;
         const AVHWDeviceType dt = av_hwdevice_find_type_by_name(hw_device.c_str());
         if (dt == AV_HWDEVICE_TYPE_NONE) return false;
-        ::AVBufferRef* dev = nullptr;
         const std::string& gpu_arg =
             (hw_device == canvas::core::HwDeviceManager::preferred_gpu_backend())
                 ? canvas::core::HwDeviceManager::preferred_device_arg()
                 : std::string{};
-        av_hwdevice_ctx_create(&dev, dt, gpu_arg.empty() ? nullptr : gpu_arg.c_str(),
-                               nullptr, 0);
+        ::AVBufferRef* dev = nullptr;
+        ::AVBufferRef* fr = nullptr;
+        if (!export_hw_pool_acquire(hw_device, gpu_arg, hw_pix, w, h, &dev, &fr))
+            return false;
         dec_dev = dev;
-        if (!dec_dev) return false;
-
-        ::AVBufferRef* fr = av_hwframe_ctx_alloc(dev);
-        if (fr) {
-            AVHWFramesContext* fc = reinterpret_cast<AVHWFramesContext*>(fr->data);
-            if (fc) {
-                fc->format = hw_pix;
-                fc->sw_format = AV_PIX_FMT_NV12;
-                fc->width = w;
-                fc->height = h;
-                fc->initial_pool_size = 12;
-            }
-            if (av_hwframe_ctx_init(fr) == 0) {
-                hw_frames = fr;
-                enc_hw_fmt_ = reinterpret_cast<AVHWFramesContext*>(fr->data)->format;
-            } else {
-                av_buffer_unref(&fr);
-            }
-        }
-        if (!hw_frames) return false;
+        hw_frames = fr;
+        const auto* fc = reinterpret_cast<const AVHWFramesContext*>(fr->data);
+        enc_hw_fmt_ = fc ? fc->format : AV_PIX_FMT_NONE;
+        if (!hw_frames || enc_hw_fmt_ == AV_PIX_FMT_NONE) return false;
 
         if (enc_hw_fmt_ == AV_PIX_FMT_CUDA && canvas::core::gpu::cuda_available())
             kind = ExportBackend::Cuda;
