@@ -86,6 +86,11 @@ canvas_add_headless_test(source_preview_model_test
     ../src/features/source_preview/source_preview_model.cpp
 )
 
+canvas_add_headless_test(shortcut_catalog_test
+    shortcut_catalog_test.cpp
+    ../src/features/shortcuts/shortcut_catalog.cpp
+)
+
 qt_add_executable(volume_line_drag_qt_test
     qt/volume_line_drag_qt_test.cpp
     ../resources.qrc
@@ -279,5 +284,34 @@ target_link_libraries(theme_roundtrip_qt_test PRIVATE
 set_target_properties(theme_roundtrip_qt_test PROPERTIES AUTOMOC ON AUTORCC ON AUTOUIC OFF)
 add_test(NAME theme_roundtrip_qt_test COMMAND theme_roundtrip_qt_test)
 set_tests_properties(theme_roundtrip_qt_test PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(shortcut_manager_qt_test
+    qt/shortcut_manager_qt_test.cpp
+    ../src/Widgets/keyboard_map_widget.cpp
+    ../src/UX/KeyboardCustomizationDialog.cpp
+    ../src/features/shortcuts/shortcut_catalog.cpp
+    ../src/features/shortcuts/shortcut_manager.cpp
+    ../src/UX/theme_clip_colors.cpp
+    ../src/UX/theme_icons.cpp
+    ../src/UX/theme_menu.cpp
+    ../src/UX/theme_state.cpp
+    ../src/UX/theme_styles.cpp
+    ../src/UX/theme_tokens.cpp
+    ../src/UX/horizon_style.cpp
+)
+target_include_directories(shortcut_manager_qt_test PRIVATE
+    ${CANVAS_GUI_SRC}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../core/include
+)
+target_link_libraries(shortcut_manager_qt_test PRIVATE
+    Qt6::Widgets
+    Qt6::Svg
+    Qt6::Test
+    canvas_core
+)
+set_target_properties(shortcut_manager_qt_test PROPERTIES AUTOMOC ON AUTORCC ON AUTOUIC OFF)
+add_test(NAME shortcut_manager_qt_test COMMAND shortcut_manager_qt_test)
+set_tests_properties(shortcut_manager_qt_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

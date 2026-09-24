@@ -75,17 +75,6 @@ void MainWindow::ensure_tracks_at(canvas::core::Track::Kind kind, std::size_t in
     }
 }
 
-bool MainWindow::place_selected_media(canvas::core::Placement mode) {
-    if (!project_ || media_pool_->currentRow() < 0) return false;
-    QListWidgetItem* item = media_pool_->currentItem();
-    if (!item) return false;
-    const QVariant v = item->data(Qt::UserRole);
-    if (!v.isValid()) return false;
-    const int idx = static_cast<int>(v.toLongLong());
-    if (static_cast<std::size_t>(idx) >= project_->media.size()) return false;
-    return place_media_at(project_->media[idx].id, current_frame_, mode);
-}
-
 void MainWindow::add_title_clip() {
     if (!project_) return;
     const double fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
@@ -237,8 +226,8 @@ void MainWindow::apply_transition_from_toolbox(const QString& transition_id, int
 }
 
 bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
-                                canvas::core::Placement mode,
-                                std::optional<double> drop_scene_y) {
+                                canvas::core::Placement mode, std::optional<double> drop_scene_y,
+                                const int64_t src_in, const int64_t src_out) {
     if (!project_) return false;
     frame = std::max<int64_t>(0, frame);
     const canvas::core::MediaEntry* found = nullptr;
@@ -248,9 +237,13 @@ bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
     if (!found) return false;
 
     const bool audio_only = found->width <= 0 && found->height <= 0;
-    const int64_t src_out = found->total_frames > 0
-                                ? found->total_frames
-                                : 300 * static_cast<int64_t>(found->fps > 0 ? found->fps : 30.0);
+    const int64_t clip_src_in = src_in >= 0 ? src_in : 0;
+    int64_t clip_src_out =
+        src_out >= 0 ? src_out
+                     : (found->total_frames > 0
+                            ? found->total_frames
+                            : 300 * static_cast<int64_t>(found->fps > 0 ? found->fps : 30.0));
+    if (clip_src_out <= clip_src_in) clip_src_out = clip_src_in + 1;
     const std::string base = QFileInfo(QString::fromStdString(found->path))
                                  .completeBaseName()
                                  .toStdString();
@@ -264,8 +257,8 @@ bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
         canvas::core::Clip aclip;
         aclip.media = found->id;
         aclip.tl_in = frame;
-        aclip.src_in = 0;
-        aclip.src_out = src_out;
+        aclip.src_in = clip_src_in;
+        aclip.src_out = clip_src_out;
         aclip.name = base + " Audio";
         auto cmd = canvas::core::place_clip(project_->sequence, canvas::core::Track::Kind::Audio,
                                         static_cast<std::size_t>(lane), std::move(aclip), mode,
@@ -284,15 +277,15 @@ bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
     canvas::core::Clip clip;
     clip.media = found->id;
     clip.tl_in = frame;
-    clip.src_in = 0;
-    clip.src_out = src_out;
+    clip.src_in = clip_src_in;
+    clip.src_out = clip_src_out;
     clip.name = base;
 
     canvas::core::Clip aclip;
     aclip.media = found->id;
     aclip.tl_in = frame;
-    aclip.src_in = 0;
-    aclip.src_out = clip.src_out;
+    aclip.src_in = clip_src_in;
+    aclip.src_out = clip_src_out;
     aclip.name = base + " Audio";
 
     ensure_tracks_at(canvas::core::Track::Kind::Audio, 0);

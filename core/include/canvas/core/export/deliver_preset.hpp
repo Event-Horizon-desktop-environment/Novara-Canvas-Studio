@@ -8,13 +8,6 @@
 
 namespace canvas::core {
 
-enum class RenderScope {
-    SingleClip,
-    IndividualClips,
-    Still,
-    FrameSequence,
-};
-
 enum class EncoderBackend {
     Auto,
     CPU,
@@ -86,6 +79,15 @@ std::string container_format_name(const std::string& format);
 [[nodiscard]] bool scope_is_still(RenderScope scope) noexcept;
 [[nodiscard]] bool scope_is_sequence(RenderScope scope) noexcept;
 [[nodiscard]] bool scope_is_image(RenderScope scope) noexcept;
+[[nodiscard]] bool scope_is_range(RenderScope scope) noexcept;
+
+struct RenderRange {
+    int64_t start = 0;
+    int64_t count = 0;
+};
+
+[[nodiscard]] RenderRange render_range_window(int64_t mark_in, int64_t mark_out, int64_t playhead,
+                                              int64_t timeline_frames) noexcept;
 
 [[nodiscard]] std::string still_output_path(const std::string& base);
 [[nodiscard]] std::string sequence_output_path(const std::string& base, int64_t frame_index);
@@ -117,6 +119,7 @@ struct DeliverVideoSettings {
     int target_bitrate_kbps = 80000;
     int max_bitrate_kbps = 80000;
     MultiEncode multi_encode = MultiEncode::Enabled;
+    int parallel_chunks = 1;
     std::string preset = "Medium";
     EncoderTuning tuning = EncoderTuning::HighQuality;
     bool two_pass = false;
@@ -186,6 +189,7 @@ struct RenderJobSnapshot {
     std::string output_path;
     DeliverSettings settings;
     int64_t total_frames = 0;
+    int64_t start_frame = 0;
     int priority = 0;
     int status = 0;
     double progress = 0.0;

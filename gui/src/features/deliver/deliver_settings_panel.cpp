@@ -187,7 +187,15 @@ void DeliverSettingsPanel::build() {
     h->addLayout(preset_row);
 
     scope_combo_ = new QComboBox(header);
-    scope_combo_->addItems({tr("Single clip"), tr("Individual clips")});
+    scope_combo_->addItems({tr("Single clip"), tr("Individual clips"), tr("Current frame (still)"),
+                            tr("Frame sequence"), tr("In/Out range")});
+    scope_combo_->setToolTip(
+        tr("Single clip renders the whole timeline. Individual clips renders one "
+           "file per clip. Still writes the frame under the playhead as a PNG. "
+           "Frame sequence writes every frame as a numbered PNG series. "
+           "In/Out range renders only the timeline in/out marks (set them with "
+           "I and O on the timeline; without marks it falls back to the whole "
+           "timeline)."));
     style_field(scope_combo_);
     h->addWidget(scope_combo_);
 
@@ -392,6 +400,13 @@ void DeliverSettingsPanel::build() {
     multi_encode_combo_ = new QComboBox;
     multi_encode_combo_->addItems({tr("Auto"), tr("Enabled"), tr("Disabled")});
     style_field(multi_encode_combo_);
+    parallel_chunks_combo_ = new QComboBox;
+    parallel_chunks_combo_->addItems({tr("Off"), tr("2 chunks")});
+    parallel_chunks_combo_->setToolTip(
+        tr("Split the timeline into 2 segments encoded in parallel, then joined. "
+           "Video-only, no chapters. Helps CPU-bound exports; skip it when a "
+           "single export already runs fast (encoder-bound)."));
+    style_field(parallel_chunks_combo_);
     {
         auto* sec = make_section(tr("QUALITY & BITRATE"), v);
         sec->addWidget(make_row(tr("Rate Control"), rate_control_combo_));
@@ -399,6 +414,7 @@ void DeliverSettingsPanel::build() {
         sec->addWidget(bitrate_row_);
         sec->addWidget(max_bitrate_row_);
         sec->addWidget(make_row(tr("Multi Encode"), multi_encode_combo_));
+        sec->addWidget(make_row(tr("Parallel Chunks"), parallel_chunks_combo_));
     }
 
     update_bitrate_visibility();
@@ -453,6 +469,18 @@ void DeliverSettingsPanel::build() {
     export_audio_ = (QCheckBox*)make_check(tr("Export Audio"));
     export_audio_->setChecked(true);
 
+    normalize_audio_ = (QCheckBox*)make_check(tr("Normalize Loudness"));
+    normalize_audio_->setToolTip(
+        tr("Measure the exported mix first, then apply one constant gain so the "
+           "result lands on the target integrated loudness (EBU R128 style)."));
+    normalize_lufs_ = new QDoubleSpinBox;
+    normalize_lufs_->setRange(-40.0, -5.0);
+    normalize_lufs_->setDecimals(1);
+    normalize_lufs_->setValue(-23.0);
+    normalize_lufs_->setSuffix(tr(" LUFS"));
+    normalize_lufs_->setEnabled(false);
+    style_field(normalize_lufs_);
+
     audio_codec_combo_ = new QComboBox;
     for (const auto& c : canvas::core::deliver_audio_codecs()) audio_codec_combo_->addItem(QString::fromStdString(c));
     style_field(audio_codec_combo_);
@@ -478,6 +506,8 @@ void DeliverSettingsPanel::build() {
         sec->addWidget(make_row(tr("Bitrate (Kbps)"), audio_bitrate_));
         sec->addWidget(make_row(tr("Sample Rate"), audio_rate_combo_));
         sec->addWidget(make_row(tr("Channels"), audio_channels_combo_));
+        sec->addWidget(normalize_audio_);
+        sec->addWidget(make_row(tr("Target Loudness"), normalize_lufs_));
     }
 
     au->addStretch(1);
@@ -564,6 +594,7 @@ void DeliverSettingsPanel::build() {
     tabs_->addTab(make_scroll(file), tr("File"));
 
     rebuild_codec_list();
+    update_scope_state();
 }
 
 void DeliverSettingsPanel::set_encoder_key(const QString& key) {
@@ -645,27 +676,38 @@ void DeliverSettingsPanel::rebuild_codec_list() {
 
 void DeliverSettingsPanel::connect_all() {
     auto onChange = [this] { emit settings_changed(); update_estimate(); };
-    for (QComboBox* cb : {preset_combo_, scope_combo_, format_combo_, codec_combo_, encoder_combo_,
-                          resolution_combo_, profile_combo_, key_frames_combo_,
-                          rate_control_combo_, quality_combo_, multi_encode_combo_, preset_q_combo_,
-                          tuning_combo_,
-                          audio_codec_combo_, audio_rate_combo_, audio_channels_combo_,
-                          pixel_aspect_combo_, data_levels_combo_, color_space_combo_, gamma_combo_,
-                          data_burn_in_combo_, flat_pass_combo_, visionos_combo_})
+    for (QComboBox* cb :
+         {preset_combo_,          scope_combo_,        format_combo_,       codec_combo_,
+          encoder_combo_,         resolution_combo_,   profile_combo_,      key_frames_combo_,
+          rate_control_combo_,    quality_combo_,      multi_encode_combo_, preset_q_combo_,
+          parallel_chunks_combo_, tuning_combo_,       audio_codec_combo_,  audio_rate_combo_,
+          audio_channels_combo_,  pixel_aspect_combo_, data_levels_combo_,  color_space_combo_,
+          gamma_combo_,           data_burn_in_combo_, flat_pass_combo_,    visionos_combo_})
         connect(cb, &QComboBox::currentIndexChanged, this, onChange);
+    connect(scope_combo_, &QComboBox::currentIndexChanged, this, [this] { update_scope_state(); });
+    connect(export_audio_, &QCheckBox::toggled, this, [this] { update_scope_state(); });
     connect(rate_control_combo_, &QComboBox::currentIndexChanged, this,
             [this] { update_bitrate_visibility(); });
-    for (QCheckBox* c : {export_video_, network_opt_, vertical_res_, export_alpha_, chapters_,
-                         custom_fps_chk_,
-                         frame_reorder_, two_pass_, scene_cut_, adaptive_b_, nref_p_, weighted_pred_,
-                         temporal_filt_, uni_b_, export_audio_, retain_sub_black_, bypass_reencode_,
-                         render_all_tracks_, force_sizing_hq_, force_debayer_hq_})
+    for (QCheckBox* c : {export_video_,    network_opt_,
+                         vertical_res_,    export_alpha_,
+                         chapters_,        custom_fps_chk_,
+                         frame_reorder_,   two_pass_,
+                         scene_cut_,       adaptive_b_,
+                         nref_p_,          weighted_pred_,
+                         temporal_filt_,   uni_b_,
+                         export_audio_,    retain_sub_black_,
+                         bypass_reencode_, render_all_tracks_,
+                         force_sizing_hq_, force_debayer_hq_,
+                         normalize_audio_})
         connect(c, &QCheckBox::toggled, this, onChange);
+    connect(normalize_audio_, &QCheckBox::toggled, this,
+            [this](bool on) { normalize_lufs_->setEnabled(on); });
     for (QSpinBox* s : {res_w_, res_h_, key_interval_spin_, bitrate_spin_,
                         max_bitrate_spin_, lookahead_spin_, lookahead_level_, aq_strength_,
                         audio_bitrate_})
         connect(s, QOverload<int>::of(&QSpinBox::valueChanged), this, onChange);
     connect(fps_spin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onChange);
+    connect(normalize_lufs_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onChange);
     connect(custom_fps_chk_, &QCheckBox::toggled, this, [this](bool on) {
         fps_spin_->setEnabled(on);
         emit settings_changed();
@@ -683,6 +725,24 @@ void DeliverSettingsPanel::connect_all() {
             [this] { rebuild_codec_list(); emit settings_changed(); });
 }
 
+void DeliverSettingsPanel::update_scope_state() {
+    if (!scope_combo_) return;
+    const int scope = scope_combo_->currentIndex();
+    const bool image = canvas::core::scope_is_image(static_cast<canvas::core::RenderScope>(scope));
+    if (format_combo_) format_combo_->setEnabled(!image);
+    if (codec_combo_) codec_combo_->setEnabled(!image);
+    if (encoder_combo_) encoder_combo_->setEnabled(!image);
+    if (chapters_) chapters_->setEnabled(!image);
+    if (export_audio_) export_audio_->setEnabled(!image);
+    if (normalize_audio_) normalize_audio_->setEnabled(!image);
+    if (normalize_lufs_) normalize_lufs_->setEnabled(!image && normalize_audio_->isChecked());
+    if (parallel_chunks_combo_ && export_audio_) {
+        const bool ok = scope == 0 && !export_audio_->isChecked();
+        parallel_chunks_combo_->setEnabled(ok);
+        if (!ok) parallel_chunks_combo_->setCurrentIndex(0);
+    }
+}
+
 void DeliverSettingsPanel::update_bitrate_visibility() {
     if (!bitrate_spin_ || !max_bitrate_spin_) return;
     const deliver_model::BitrateVisibility v =
@@ -698,8 +758,7 @@ void DeliverSettingsPanel::update_bitrate_visibility() {
 canvas::core::DeliverSettings DeliverSettingsPanel::settings() const {
     canvas::core::DeliverSettings ds;
     ds.preset_name = preset_combo_->currentText().toStdString();
-    ds.render_scope = scope_combo_->currentIndex() == 0 ? canvas::core::RenderScope::SingleClip
-                                                        : canvas::core::RenderScope::IndividualClips;
+    ds.render_scope = static_cast<canvas::core::RenderScope>(scope_combo_->currentIndex());
     ds.file.file_name = file_name_->text().toStdString();
     ds.file.location = location_->text().toStdString();
 
@@ -755,6 +814,7 @@ canvas::core::DeliverSettings DeliverSettingsPanel::settings() const {
             ? bitrate_spin_->value()
             : max_bitrate_spin_->value();
     ds.video.multi_encode = (canvas::core::MultiEncode)multi_encode_combo_->currentIndex();
+    ds.video.parallel_chunks = parallel_chunks_combo_->currentIndex() == 1 ? 2 : 1;
     ds.video.preset = preset_q_combo_->currentText().toStdString();
     ds.video.tuning = (canvas::core::EncoderTuning)tuning_combo_->currentIndex();
     ds.video.two_pass = two_pass_->isChecked();
@@ -782,6 +842,8 @@ canvas::core::DeliverSettings DeliverSettingsPanel::settings() const {
     ds.video.visionos_bypass = visionos_combo_->currentText().toStdString();
 
     ds.audio.export_audio = export_audio_->isChecked();
+    ds.audio.normalize_audio = normalize_audio_->isChecked();
+    ds.audio.normalize_target_lufs = static_cast<float>(normalize_lufs_->value());
     ds.audio.codec = audio_codec_combo_->currentText().toStdString();
     ds.audio.bitrate_kbps = audio_bitrate_->value();
     ds.audio.sample_rate = audio_rate_combo_->currentText().toInt();
@@ -794,7 +856,8 @@ canvas::core::DeliverSettings DeliverSettingsPanel::settings() const {
 void DeliverSettingsPanel::set_settings(const canvas::core::DeliverSettings& ds) {
     building_ = true;
     preset_combo_->setCurrentText(QString::fromStdString(ds.preset_name));
-    scope_combo_->setCurrentIndex(ds.render_scope == canvas::core::RenderScope::SingleClip ? 0 : 1);
+    scope_combo_->setCurrentIndex(std::clamp(static_cast<int>(ds.render_scope), 0,
+                                             static_cast<int>(canvas::core::RenderScope::Range)));
     file_name_->setText(QString::fromStdString(ds.file.file_name));
     location_->setText(QString::fromStdString(ds.file.location));
     format_combo_->setCurrentText(QString::fromStdString(ds.video.format));
@@ -809,6 +872,10 @@ void DeliverSettingsPanel::set_settings(const canvas::core::DeliverSettings& ds)
     network_opt_->setChecked(ds.video.network_optimization);
     export_video_->setChecked(ds.video.export_video);
     export_audio_->setChecked(ds.audio.export_audio);
+    normalize_audio_->setChecked(ds.audio.normalize_audio);
+    normalize_lufs_->setValue(ds.audio.normalize_target_lufs);
+    parallel_chunks_combo_->setCurrentIndex(ds.video.parallel_chunks == 2 ? 1 : 0);
+    update_scope_state();
     building_ = false;
     emit settings_changed();
 }

@@ -281,6 +281,7 @@ json deliver_video_to_json(const DeliverVideoSettings& v) {
                 {"target_bitrate_kbps", v.target_bitrate_kbps},
                 {"max_bitrate_kbps", v.max_bitrate_kbps},
                 {"multi_encode", static_cast<int>(v.multi_encode)},
+                {"parallel_chunks", v.parallel_chunks},
                 {"preset", v.preset},
                 {"tuning", static_cast<int>(v.tuning)},
                 {"two_pass", v.two_pass},
@@ -333,6 +334,7 @@ DeliverVideoSettings deliver_video_from_json(const json& v) {
     out.target_bitrate_kbps = v.value("target_bitrate_kbps", out.target_bitrate_kbps);
     out.max_bitrate_kbps = v.value("max_bitrate_kbps", out.max_bitrate_kbps);
     out.multi_encode = static_cast<MultiEncode>(v.value("multi_encode", static_cast<int>(out.multi_encode)));
+    out.parallel_chunks = v.value("parallel_chunks", out.parallel_chunks);
     out.preset = v.value("preset", out.preset);
     out.tuning = static_cast<EncoderTuning>(v.value("tuning", static_cast<int>(out.tuning)));
     out.two_pass = v.value("two_pass", out.two_pass);
@@ -418,6 +420,7 @@ json job_to_json(const RenderJobSnapshot& j) {
                 {"output_path", j.output_path},
                 {"settings", deliver_to_json(j.settings)},
                 {"total_frames", j.total_frames},
+                {"start_frame", j.start_frame},
                 {"priority", j.priority},
                 {"status", j.status},
                 {"progress", j.progress},
@@ -435,6 +438,7 @@ RenderJobSnapshot job_from_json(const json& j) {
     out.output_path = j.value("output_path", out.output_path);
     if (j.contains("settings")) out.settings = deliver_from_json(j.at("settings"));
     out.total_frames = j.value("total_frames", out.total_frames);
+    out.start_frame = j.value("start_frame", out.start_frame);
     out.priority = j.value("priority", out.priority);
     out.status = j.value("status", out.status);
     out.progress = j.value("progress", out.progress);

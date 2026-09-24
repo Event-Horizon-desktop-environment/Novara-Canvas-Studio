@@ -24,6 +24,10 @@
 namespace canvas::gui {
 
 void build_app_menus(MainWindow& mw) {
+    const auto tag = [](QAction* action, const char* id) {
+        action->setObjectName(QString::fromUtf8(id));
+        return action;
+    };
     auto* canvas_menu = mw.ui->menubar->addMenu(MainWindow::tr("Novara Canvas"));
     canvas_menu->addAction(MainWindow::tr("&About Novara Canvas Studio"), &mw, [&mw] {
         QMessageBox::about(
@@ -79,57 +83,103 @@ void build_app_menus(MainWindow& mw) {
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->open();
     };
-    canvas_menu->addAction(MainWindow::tr("&Preferences..."), QKeySequence::Preferences,
-                           &mw, show_preferences);
+    tag(canvas_menu->addAction(MainWindow::tr("&Preferences..."), QKeySequence::Preferences,
+                                &mw, show_preferences),
+        "app.preferences");
     canvas_menu->addSeparator();
-    canvas_menu->addAction(MainWindow::tr("&Quit Novara Canvas Studio"), QKeySequence::Quit,
-                           qApp, &QApplication::quit);
+    tag(canvas_menu->addAction(MainWindow::tr("&Quit Novara Canvas Studio"), QKeySequence::Quit,
+                                qApp, &QApplication::quit),
+        "app.quit");
 
     auto* file = mw.ui->menubar->addMenu(MainWindow::tr("&File"));
-    file->addAction(MainWindow::tr("&New Project"), QKeySequence::New, &mw, &MainWindow::on_new_project);
-    file->addAction(MainWindow::tr("&Open Project..."), QKeySequence::Open, &mw, &MainWindow::on_open_project);
+    tag(file->addAction(MainWindow::tr("&New Project"), QKeySequence::New, &mw,
+                         &MainWindow::on_new_project),
+        "file.new_project");
+    tag(file->addAction(MainWindow::tr("&Open Project..."), QKeySequence::Open, &mw,
+                         &MainWindow::on_open_project),
+        "file.open_project");
     mw.open_recent_menu_ = file->addMenu(MainWindow::tr("Open &Recent"));
     mw.open_recent_menu_->setEnabled(false);
     QObject::connect(mw.open_recent_menu_, &QMenu::triggered, &mw, &MainWindow::on_open_recent_file);
-    file->addAction(MainWindow::tr("&Project Manager"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M),
-                    &mw, &MainWindow::enter_project_manager);
-    file->addAction(MainWindow::tr("&Save Project"), QKeySequence::Save, &mw, &MainWindow::on_save_project);
-    file->addAction(MainWindow::tr("Save Project &As..."), QKeySequence::SaveAs, &mw, &MainWindow::on_save_project_as);
-    file->addAction(MainWindow::tr("&Archive Project..."), &mw, &MainWindow::on_archive_project);
+    tag(file->addAction(MainWindow::tr("&Project Manager"),
+                         QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M), &mw,
+                         &MainWindow::enter_project_manager),
+        "file.project_manager");
+    tag(file->addAction(MainWindow::tr("&Save Project"), QKeySequence::Save, &mw,
+                         &MainWindow::on_save_project),
+        "file.save_project");
+    tag(file->addAction(MainWindow::tr("Save Project &As..."), QKeySequence::SaveAs, &mw,
+                         &MainWindow::on_save_project_as),
+        "file.save_as");
+    tag(file->addAction(MainWindow::tr("&Archive Project..."), &mw, &MainWindow::on_archive_project),
+        "file.archive_project");
     file->addSeparator();
-    file->addAction(MainWindow::tr("&Import Media..."), QKeySequence(Qt::CTRL | Qt::Key_I), &mw,
-                    &MainWindow::on_import_media);
+    tag(file->addAction(MainWindow::tr("&Import Media..."), QKeySequence(Qt::CTRL | Qt::Key_I),
+                         &mw, &MainWindow::on_import_media),
+        "file.import_media");
     file->addSeparator();
-    file->addAction(MainWindow::tr("Export &EDL..."), &mw, &MainWindow::export_edl);
+    tag(file->addAction(MainWindow::tr("Export &EDL..."), &mw, &MainWindow::export_edl),
+        "file.export_edl");
 
     auto* edit = mw.ui->menubar->addMenu(MainWindow::tr("&Edit"));
-    edit->addAction(MainWindow::tr("&Undo"), QKeySequence::Undo, &mw, &MainWindow::on_undo);
-    edit->addAction(MainWindow::tr("&Redo"), QKeySequence::Redo, &mw, &MainWindow::on_redo);
+    tag(edit->addAction(MainWindow::tr("&Undo"), QKeySequence::Undo, &mw, &MainWindow::on_undo),
+        "edit.undo");
+    tag(edit->addAction(MainWindow::tr("&Redo"), QKeySequence::Redo, &mw, &MainWindow::on_redo),
+        "edit.redo");
     edit->addSeparator();
-    edit->addAction(MainWindow::tr("&Find Action..."), QKeySequence(Qt::CTRL | Qt::Key_K), &mw,
-                    [&mw] {
-                        auto* search = new canvas::gui::ActionSearch(mw.ui->menubar, &mw);
-                        search->setAttribute(Qt::WA_DeleteOnClose);
-                        search->collect_actions();
-                        search->open();
-                    });
+    tag(edit->addAction(MainWindow::tr("&Find Action..."), QKeySequence(Qt::CTRL | Qt::Key_K),
+                         &mw,
+                         [&mw] {
+                             auto* search = new canvas::gui::ActionSearch(mw.ui->menubar, &mw);
+                             search->setAttribute(Qt::WA_DeleteOnClose);
+                             search->collect_actions();
+                             search->open();
+                         }),
+        "edit.find_action");
+    tag(edit->addAction(MainWindow::tr("&Keyboard Customization..."),
+                         QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_K), &mw,
+                         [&mw] { mw.open_keyboard_customization(); }),
+        "app.keyboard_customization");
     auto* trim = mw.ui->menubar->addMenu(MainWindow::tr("&Trim"));
-    trim->addAction(MainWindow::tr("Ripple Delete"), QKeySequence(Qt::Key_Delete), &mw,
-                    [&mw] { mw.delete_selected_clip(true); });
-    trim->addAction(MainWindow::tr("Lift"), QKeySequence(Qt::SHIFT | Qt::Key_Delete), &mw,
-                    [&mw] { mw.delete_selected_clip(false); });
+    tag(trim->addAction(MainWindow::tr("Ripple Delete"),
+                         QKeySequence(Qt::SHIFT | Qt::Key_Backspace), &mw,
+                         [&mw] { mw.delete_selected_clip(true); }),
+        "trim.ripple_delete");
+    tag(trim->addAction(MainWindow::tr("Lift"), QKeySequence(Qt::Key_Backspace), &mw,
+                         [&mw] { mw.delete_selected_clip(false); }),
+        "trim.lift");
     trim->addAction(MainWindow::tr("Cycle Edit Point Side"), QKeySequence(Qt::Key_U));
-    trim->addAction(MainWindow::tr("Remove All Transitions"), &mw, [&mw] {
-        mw.remove_all_transitions();
-    });
+    tag(trim->addAction(MainWindow::tr("Remove All Transitions"), &mw,
+                         [&mw] { mw.remove_all_transitions(); }),
+        "trim.remove_all_transitions");
 
     auto* timeline_menu = mw.ui->menubar->addMenu(MainWindow::tr("&Timeline"));
-    timeline_menu->addAction(MainWindow::tr("Add Edit"), QKeySequence(Qt::CTRL | Qt::Key_Backslash));
-    timeline_menu->addAction(MainWindow::tr("Add Marker"), QKeySequence(Qt::Key_M));
-    timeline_menu->addAction(MainWindow::tr("Add Title"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_T),
-                             &mw, [&mw] { mw.add_title_clip(); });
-    timeline_menu->addAction(MainWindow::tr("Zoom to Fit"), QKeySequence(Qt::SHIFT | Qt::Key_Z), &mw,
-                             [&mw] { mw.timeline_->zoom_fit(); });
+    tag(timeline_menu->addAction(MainWindow::tr("Add Edit"),
+                                 QKeySequence(Qt::CTRL | Qt::Key_Backslash), &mw,
+                                 [&mw] { mw.split_selected_clips_at_playhead(); }),
+        "timeline.split_at_playhead");
+    tag(timeline_menu->addAction(MainWindow::tr("Add Marker"), QKeySequence(Qt::Key_M), &mw,
+                                 [&mw] { mw.toggle_bookmark_at_playhead(); }),
+        "timeline.toggle_bookmark");
+    tag(timeline_menu->addAction(MainWindow::tr("Select Tool"), QKeySequence(Qt::Key_A), &mw,
+                                 [&mw] {
+                                     if (mw.timeline_ != nullptr)
+                                         mw.timeline_->set_tool(TimelineWidget::Tool::Select);
+                                 }),
+        "timeline.select_tool");
+    tag(timeline_menu->addAction(MainWindow::tr("Blade Tool"), QKeySequence(Qt::Key_B), &mw,
+                                 [&mw] {
+                                     if (mw.timeline_ != nullptr)
+                                         mw.timeline_->set_tool(TimelineWidget::Tool::Blade);
+                                 }),
+        "timeline.blade_tool");
+    tag(timeline_menu->addAction(MainWindow::tr("Add Title"),
+                                 QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_T), &mw,
+                                 [&mw] { mw.add_title_clip(); }),
+        "timeline.add_title");
+    tag(timeline_menu->addAction(MainWindow::tr("Zoom to Fit"), QKeySequence(Qt::SHIFT | Qt::Key_Z),
+                                 &mw, [&mw] { mw.timeline_->zoom_fit(); }),
+        "timeline.zoom_fit");
     const auto collapse_all = [&mw](bool collapsed) {
         if (!mw.project_) return;
         auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->sequence, collapsed);
@@ -139,25 +189,36 @@ void build_app_menus(MainWindow& mw) {
         mw.refresh_timeline();
         mw.push_snapshot();
     };
-    timeline_menu->addAction(MainWindow::tr("Collapse All Tracks"),
-                             QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C), &mw,
-                             [collapse_all] { collapse_all(true); });
-    timeline_menu->addAction(MainWindow::tr("Expand All Tracks"),
-                             QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), &mw,
-                             [collapse_all] { collapse_all(false); });
+    tag(timeline_menu->addAction(MainWindow::tr("Collapse All Tracks"),
+                                  QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C), &mw,
+                                  [collapse_all] { collapse_all(true); }),
+        "timeline.collapse_all");
+    tag(timeline_menu->addAction(MainWindow::tr("Expand All Tracks"),
+                                  QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), &mw,
+                                  [collapse_all] { collapse_all(false); }),
+        "timeline.expand_all");
 
     auto* ai_menu = timeline_menu->addMenu(MainWindow::tr("AI Tools"));
     apply_rounded_menu(ai_menu);
-    ai_menu->addAction(MainWindow::tr("Generate Subtitles From Audio…"), &mw,
-                       [&mw] { mw.open_subtitle_dialog(); });
+    tag(ai_menu->addAction(MainWindow::tr("Generate Subtitles From Audio…"), &mw,
+                          [&mw] { mw.open_subtitle_dialog(); }),
+        "timeline.generate_subtitles");
     ai_menu->addSeparator();
     auto* ai_hint = new QAction(MainWindow::tr("Transcription runs locally"), ai_menu);
     ai_hint->setEnabled(false);
     ai_menu->addAction(ai_hint);
 
     auto* clip_menu = mw.ui->menubar->addMenu(MainWindow::tr("&Clip"));
-    clip_menu->addAction(MainWindow::tr("Add Transition"), QKeySequence(Qt::CTRL | Qt::Key_T));
-    clip_menu->addAction(MainWindow::tr("Link/Unlink"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_L));
+    tag(clip_menu->addAction(MainWindow::tr("Add Transition"), QKeySequence(Qt::CTRL | Qt::Key_T),
+                             &mw, [&mw] { mw.toggle_transition_on_selected(); }),
+        "clip.add_transition");
+    tag(clip_menu->addAction(MainWindow::tr("Enable/Disable Clip"), QKeySequence(Qt::Key_D), &mw,
+                             [&mw] { mw.toggle_disable_selected_clip(); }),
+        "clip.toggle_enable");
+    tag(clip_menu->addAction(MainWindow::tr("Link/Unlink"),
+                             QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_L), &mw,
+                             [&mw] { mw.toggle_clip_link(); }),
+        "clip.toggle_link");
 
     auto* clip_color_menu = clip_menu->addMenu(MainWindow::tr("Clip Colour") + QStringLiteral(" >"));
     apply_rounded_menu(clip_color_menu);
@@ -191,30 +252,89 @@ void build_app_menus(MainWindow& mw) {
     });
 
     auto* mark_menu = mw.ui->menubar->addMenu(MainWindow::tr("&Mark"));
-    mark_menu->addAction(MainWindow::tr("Mark In"), QKeySequence(Qt::Key_I));
-    mark_menu->addAction(MainWindow::tr("Mark Out"), QKeySequence(Qt::Key_O));
-    mark_menu->addAction(MainWindow::tr("Clear In/Out"), QKeySequence(Qt::ALT | Qt::Key_X));
+    tag(mark_menu->addAction(MainWindow::tr("Mark In"), QKeySequence(Qt::Key_I), &mw,
+                             [&mw] { mw.mark_in(); }),
+        "mark.in");
+    tag(mark_menu->addAction(MainWindow::tr("Mark Out"), QKeySequence(Qt::Key_O), &mw,
+                             [&mw] { mw.mark_out(); }),
+        "mark.out");
+    tag(mark_menu->addAction(MainWindow::tr("Clear In/Out"), QKeySequence(Qt::ALT | Qt::Key_X),
+                             &mw, [&mw] { mw.clear_in_out(); }),
+        "mark.clear");
+    mark_menu->addSeparator();
+    tag(mark_menu->addAction(MainWindow::tr("Create Range from In/Out"),
+                             QKeySequence(Qt::ALT | Qt::Key_R), &mw,
+                             [&mw] { mw.create_range_from_marks(); }),
+        "mark.create_range");
+    tag(mark_menu->addAction(MainWindow::tr("Insert from Source"), QKeySequence(Qt::Key_Comma),
+                             &mw,
+                             [&mw] { mw.three_point_place(canvas::core::Placement::Insert); }),
+        "mark.insert");
+    tag(mark_menu->addAction(MainWindow::tr("Overwrite from Source"),
+                             QKeySequence(Qt::Key_Period), &mw,
+                             [&mw] { mw.three_point_place(canvas::core::Placement::Overwrite); }),
+        "mark.overwrite");
+    tag(mark_menu->addAction(MainWindow::tr("Append at End"),
+                             QKeySequence(Qt::SHIFT | Qt::Key_F12), &mw,
+                             [&mw] { mw.three_point_place(canvas::core::Placement::AppendAtEnd); }),
+        "mark.append");
+    tag(mark_menu->addAction(MainWindow::tr("Place on Top"), QKeySequence(Qt::Key_F12), &mw,
+                             [&mw] { mw.three_point_place(canvas::core::Placement::PlaceOnTop); }),
+        "mark.place_on_top");
 
     auto* view = mw.ui->menubar->addMenu(MainWindow::tr("&View"));
-    auto* inspector_toggle_action = view->addAction(MainWindow::tr("&Inspector"), QKeySequence(Qt::Key_I), &mw, [&mw] {
-        if (mw.inspector_dock_) mw.inspector_dock_->setVisible(!mw.inspector_dock_->isVisible());
-    });
+    auto* inspector_toggle_action = tag(
+        view->addAction(MainWindow::tr("&Inspector"), QKeySequence(Qt::ALT | Qt::Key_I), &mw,
+                        [&mw] {
+                            if (mw.inspector_dock_)
+                                mw.inspector_dock_->setVisible(!mw.inspector_dock_->isVisible());
+                        }),
+        "view.inspector");
     inspector_toggle_action->setCheckable(true);
     mw.inspector_toggle_action_ = inspector_toggle_action;
-    view->addAction(MainWindow::tr("Toggle &Full Screen"), QKeySequence(Qt::Key_F11), &mw,
-                    [&mw] { mw.isFullScreen() ? mw.showNormal() : mw.showFullScreen(); });
+    tag(view->addAction(MainWindow::tr("Toggle &Full Screen"), QKeySequence(Qt::Key_F11), &mw,
+                        [&mw] { mw.isFullScreen() ? mw.showNormal() : mw.showFullScreen(); }),
+        "view.fullscreen");
 
     auto* playback = mw.ui->menubar->addMenu(MainWindow::tr("Play&back"));
-    playback->addAction(MainWindow::tr("&Play/Pause"), QKeySequence(Qt::Key_Space),
-                        [&mw] { mw.controller_.toggle_play_pause(); });
-    playback->addAction(MainWindow::tr("Previous &Frame"), QKeySequence(Qt::Key_Left),
-                        [&mw] { mw.controller_.pause(); mw.controller_.step(-1); });
-    playback->addAction(MainWindow::tr("&Next Frame"), QKeySequence(Qt::Key_Right),
-                        [&mw] { mw.controller_.pause(); mw.controller_.step(1); });
-    playback->addAction(MainWindow::tr("Go &to Start"), QKeySequence(Qt::Key_Home),
-                        [&mw] { mw.controller_.seek(0); });
-    playback->addAction(MainWindow::tr("Go &to End"), QKeySequence(Qt::Key_End),
-                        [&mw] { mw.controller_.seek(mw.total_frames_ - 1); });
+    tag(playback->addAction(MainWindow::tr("&Play/Pause"), QKeySequence(Qt::Key_Space), &mw,
+                            [&mw] { mw.controller_.toggle_play_pause(); }),
+        "playback.play_pause");
+    tag(playback->addAction(MainWindow::tr("Pa&use"), QKeySequence(Qt::Key_K), &mw,
+                            [&mw] { mw.controller_.pause(); }),
+        "playback.pause");
+    tag(playback->addAction(MainWindow::tr("Step &Back"), QKeySequence(Qt::Key_J), &mw,
+                            [&mw] { mw.controller_.pause(); mw.controller_.step(-1); }),
+        "playback.step_back");
+    tag(playback->addAction(MainWindow::tr("P&lay"), QKeySequence(Qt::Key_L), &mw,
+                            [&mw] { mw.controller_.play(); }),
+        "playback.play_forward");
+    tag(playback->addAction(MainWindow::tr("Previous &Frame"), QKeySequence(Qt::Key_Left), &mw,
+                            [&mw] { mw.controller_.pause(); mw.controller_.step(-1); }),
+        "playback.previous_frame");
+    tag(playback->addAction(MainWindow::tr("&Next Frame"), QKeySequence(Qt::Key_Right), &mw,
+                            [&mw] { mw.controller_.pause(); mw.controller_.step(1); }),
+        "playback.next_frame");
+    tag(playback->addAction(MainWindow::tr("Step Back One &Second"),
+                            QKeySequence(Qt::SHIFT | Qt::Key_Left), &mw,
+                            [&mw] {
+                                mw.controller_.pause();
+                                mw.controller_.step(-static_cast<int64_t>(mw.fps_));
+                            }),
+        "playback.step_back_second");
+    tag(playback->addAction(MainWindow::tr("Step Forward One Secon&d"),
+                            QKeySequence(Qt::SHIFT | Qt::Key_Right), &mw,
+                            [&mw] {
+                                mw.controller_.pause();
+                                mw.controller_.step(static_cast<int64_t>(mw.fps_));
+                            }),
+        "playback.step_forward_second");
+    tag(playback->addAction(MainWindow::tr("Go &to Start"), QKeySequence(Qt::Key_Home), &mw,
+                            [&mw] { mw.controller_.seek(0); }),
+        "playback.go_to_start");
+    tag(playback->addAction(MainWindow::tr("Go &to End"), QKeySequence(Qt::Key_End), &mw,
+                            [&mw] { mw.controller_.seek(mw.total_frames_ - 1); }),
+        "playback.go_to_end");
 
     for (const char* name : {"Fusion", "Color", "Fairlight", "Workspace", "Help"}) {
         auto* m = mw.ui->menubar->addMenu(MainWindow::tr(name));
@@ -238,6 +358,7 @@ void build_app_menus(MainWindow& mw) {
     const auto bar_actions = mw.ui->menubar->actions();
     for (QAction* act : bar_actions)
         round_menu_tree(act->menu());
+    mw.shortcuts_.applyToMenus(mw.ui->menubar);
 }
 
 }

@@ -64,6 +64,7 @@ void build_center_workspace(MainWindow& mw) {
     mw.viewer_ = new ViewerGL(&mw);
 
     mw.source_panel_ = new source_preview::SourceViewerPanel(&mw);
+    mw.source_panel_->setFocusPolicy(Qt::StrongFocus);
     mw.source_panel_->viewer()->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     const bool dual_view_on = QSettings().value(QStringLiteral("dualViewer"), false).toBool();
     if (dual_view_on)

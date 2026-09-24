@@ -1,8 +1,20 @@
 # Keyboard shortcuts
 
-The current set as of September 2026. Binds live in two places: the Novara Canvas/File/Edit/Trim/Timeline/Clip/Mark/View/Playback menus (ShellMenus.cpp) and the raw key handler on MainWindow (AppActions.cpp). Some calls like Undo/Redo and Play/Pause exist in both; they do the same thing either way. A few menu entries advertise a shortcut but are not wired to a handler yet — those are called out below.
+The current set as of September 2026. Shortcuts live in one active keymap (`features/shortcuts`): presets plus custom overrides persist in QSettings (`shortcuts/preset`, `shortcuts/custom/...`) and apply to the menus, the Ctrl+K command palette, and the main key handler. Open `Edit > Keyboard Customization...` (`Ctrl+Alt+K`) for the Resolve-style editor: visual keyboard, Active Key panel, searchable command tree, and five presets. DaVinci Resolve is the default preset.
 
-A note on modifiers: "CTRL" means the Control key (on Linux that's Ctrl). Where a key is shown bare (like `M`) it works without any modifier. The Shift-combined frame-step uses a whole second's worth of frames — whatever the project FPS is.
+A note on modifiers: "CTRL" means the Control key (on Linux that's Ctrl). Where a key is shown bare (like `M`) it works without any modifier. The Shift-combined frame-step uses a whole second's worth of frames — whatever the project FPS is. Preset tables translate macOS `Cmd` to Linux `Ctrl`.
+
+## Keymap presets
+
+| Preset | Notable differences from the Resolve default |
+| --- | --- |
+| DaVinci Resolve (default) | `D` enable/disable; `Backspace` lift, `Shift+Backspace` ripple delete; `Ctrl+Backslash` split; `F9`/`F10`/`Shift+F12`/`F12` insert/overwrite/append/place-on-top (`,`/`.` also insert/overwrite); `I`/`O` marks. |
+| Adobe Premiere Pro | New Project `Ctrl+Alt+N`; Add Edit `Ctrl+K` (Find Action moves to `Ctrl+Shift+K`); Insert `,` / Overwrite `.`; Lift `;`, Ripple `Shift+Delete`; Select `V`, Razor `C`; Transition `Ctrl+D`, Unlink `Ctrl+L`; Zoom `\`; Clear `Ctrl+Shift+X`; Enable `Ctrl+Shift+E`. |
+| Avid Media Composer | Redo `Ctrl+R`; Splice `V`, Overwrite `B`, Lift `Z`, Extract `X`; Clear `G`; Zoom `Ctrl+/`; Import has no default key. |
+| Final Cut Pro | Insert `W`, Overwrite `D`, Append `E`, Connect `Q`; Enable `V`; Split `Ctrl+B`; Lift `Delete`, Ripple `Shift+Delete`. |
+| Pro Tools | Import `Ctrl+Shift+I`; Redo `Shift+Z`; Transition `F`; Clear `G`; Pause `Ctrl+Space`; Selector `F7`; Zoom `Alt+A`; insert/overwrite and I/O marks have no DAW equivalent and stay unbound. |
+
+Preset sources checked during implementation: Resolve defaults ([shortcut.fyi](https://shortcut.fyi/davinci-resolve-shortcuts.html), [kstanchev cheat sheet](https://shortcuts.kstanchev.com/apps/davinci-resolve)), Premiere Pro ([Noble Desktop Mac reference](https://www.nobledesktop.com/shortcuts/premiere/mac)), Final Cut Pro ([KeyScreen reference](https://keyscreen.app/macos-final-cut-pro-keyboard-shortcuts) plus [Apple's shortcut guide](https://support.apple.com/guide/final-cut-pro/keyboard-shortcuts-ver90ba5929/mac)), Media Composer 2025.12 defaults ([EditorsKeys cheat sheet](https://www.editorskeys.com/blogs/news/avid-media-composer-keyboard-shortcuts-pdf-cheat-sheet)), Pro Tools ([Evercast shortcut guide](https://www.evercast.us/blog/pro-tools-shortcuts)).
 
 ## Project and files
 
@@ -42,8 +54,18 @@ Declared in a menu but not wired to a handler yet: `CTRL+BACKSLASH` (Timeline > 
 | Keys | Action |
 | --- | --- |
 | `M` | Toggle a bookmark at the playhead |
+| `I` | Mark In |
+| `O` | Mark Out |
+| `ALT+X` | Clear In/Out (both monitors) |
+| `ALT+R` | Create a named range from the in/out marks |
+| `,` | Insert the source range at the mark-in |
+| `.` | Overwrite the source range at the mark-in |
 
-The Mark menu also lists Mark In (`I`), Mark Out (`O`), and Clear In/Out (`ALT+X`), and the transport bar has Mark In / Mark Out buttons, but none of them are wired to a handler yet — the 3-point editing GUI (source/timeline marks) is still pending (`docs/PHASE1.md`, E2). Bare `I` is also assigned to the View > Inspector toggle, so the shortcut is ambiguous between a working action and the unimplemented one; one of the two should move.
+Mark In / Mark Out are focus-dependent, Resolve-style: they hit the source monitor when it has focus and the timeline otherwise. Opening media in the source monitor focuses it, so a double-click in the pool followed by `I` / `O` marks the source range; click the timeline (or anywhere else) and `I` / `O` mark the timeline instead. The transport bar's Mark In / Mark Out buttons do the same as the keys. The timeline draws its in/out range as a shaded band on the ruler, and the status bar shows both monitors' marks as timecode.
+
+`Alt+R` names the current timeline in/out range and stores it as a range bookmark (it saves with the project and feeds Deliver's chapters); the ruler shows ranges as amber bands. The same in/out marks drive Deliver's "In/Out range" render scope.
+
+Insert / Overwrite resolve the marks through the headless `three_point::resolve` law: source in/out when the source monitor is what's being placed (whole clip otherwise), timeline mark-in when set and the playhead otherwise, always as a single undoable linked edit. `,` / `.` only use the source monitor's media; `F9` / `F10` / `F12` / `E` prefer the source monitor too and fall back to the media-pool selection. The Mark menu also lists these entries.
 
 ## Timeline view
 
@@ -78,7 +100,7 @@ The collapse/expand all actions live in the Timeline menu (Timeline > Collapse A
 
 ## Clip placement
 
-These place whatever is selected in the media pool with a specific insert mode:
+These place the source monitor's media when one is open (with its in/out marks — the whole clip when unmarked), otherwise whatever is selected in the media pool, always at the timeline mark-in when set and the playhead otherwise:
 
 | Keys | Action |
 | --- | --- |
@@ -94,7 +116,7 @@ These place whatever is selected in the media pool with a specific insert mode:
 | Keys | Action |
 | --- | --- |
 | `F11` | Toggle full screen |
-| `I` | Toggle the Inspector dock (see the Mark In collision above) |
+| `ALT+I` | Toggle the Inspector dock |
 
 ## What is not bound yet
 

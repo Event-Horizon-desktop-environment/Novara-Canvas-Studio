@@ -1,9 +1,11 @@
 #include "canvas/core/export/loudness.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
 #include <numbers>
+#include <span>
 #include <vector>
 
 using namespace canvas::core;
@@ -87,11 +89,92 @@ void test_integrated() {
     check(mixed_lu > -10.0f, "mixed loudness is not dragged toward the quiet level");
 }
 
+std::vector<float> duplicate(const std::vector<float>& mono) {
+    std::vector<float> out;
+    out.reserve(mono.size() * 2u);
+    for (const float s : mono) {
+        out.push_back(s);
+        out.push_back(s);
+    }
+    return out;
+}
+
+std::vector<float> one_channel(const std::vector<float>& mono) {
+    std::vector<float> out;
+    out.reserve(mono.size() * 2u);
+    for (const float s : mono) {
+        out.push_back(s);
+        out.push_back(0.0f);
+    }
+    return out;
+}
+
+void test_multichannel() {
+    constexpr double kSr = 48000.0;
+    const auto mono = sine(0.5, 3.0, kSr);
+    const float mono_lu = loudness::integrated_loudness_lufs(mono, kSr);
+
+    const auto both = duplicate(mono);
+    const float both_lu = loudness::integrated_loudness_lufs_interleaved(both, 2, kSr);
+    check_near(both_lu, mono_lu, 1e-3f, "identical channels match the mono law");
+
+    const auto half = one_channel(mono);
+    const float half_lu = loudness::integrated_loudness_lufs_interleaved(half, 2, kSr);
+    check_near(half_lu, mono_lu - 3.0103f, 0.15f, "one silent channel reads 3 dB lower");
+
+    check(loudness::integrated_loudness_lufs_interleaved(both, 0, kSr) ==
+              loudness::kSilenceLufs,
+          "zero channels -> silence floor");
+    check(loudness::integrated_loudness_lufs_interleaved(both, 2, 0.0) ==
+              loudness::kSilenceLufs,
+          "interleaved invalid sample rate -> silence floor");
+
+    std::vector<float> short_block(100, 0.5f);
+    check(loudness::integrated_loudness_lufs_interleaved(short_block, 2, kSr) ==
+              loudness::kSilenceLufs,
+          "shorter than one gating block -> silence floor");
+}
+
+void test_accumulator() {
+    constexpr double kSr = 48000.0;
+    const auto mono = sine(0.5, 3.0, kSr);
+    const auto stereo = duplicate(mono);
+    const float one_shot =
+        loudness::integrated_loudness_lufs_interleaved(stereo, 2, kSr);
+
+    loudness::Accumulator acc(kSr, 2);
+    check(acc.empty(), "fresh accumulator is empty");
+    check(acc.lufs() == loudness::kSilenceLufs, "empty accumulator -> silence floor");
+
+    const std::size_t total_frames = mono.size();
+    std::size_t fed = 0;
+    std::size_t chunk = 997;
+    while (fed < total_frames) {
+        const std::size_t n = std::min(chunk, total_frames - fed);
+        acc.push(std::span<const float>(stereo.data() + fed * 2u, n * 2u));
+        fed += n;
+        chunk = chunk == 997 ? 4096 : 997;
+    }
+    check(acc.frames_seen() == total_frames, "accumulator counts every fed frame");
+    check_near(acc.lufs(), one_shot, 1e-3f, "chunked feed matches the one-shot law");
+
+    loudness::Accumulator mono_acc(kSr, 1);
+    mono_acc.push(std::span<const float>(mono.data(), mono.size()));
+    check_near(mono_acc.lufs(), loudness::integrated_loudness_lufs(mono, kSr), 1e-3f,
+               "mono accumulator matches the original law");
+
+    loudness::Accumulator unrated;
+    unrated.push(std::span<const float>(stereo.data(), stereo.size()));
+    check(unrated.lufs() == loudness::kSilenceLufs, "unconfigured accumulator -> silence");
+}
+
 }
 
 int main() {
     test_gain_law();
     test_integrated();
+    test_multichannel();
+    test_accumulator();
 
     if (failures == 0) {
         std::printf("ALL TESTS PASSED\n");

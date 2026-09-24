@@ -274,11 +274,21 @@ void MainWindow::push_live_snapshot() {
 }
 
 void MainWindow::open_source_preview(const canvas::core::MediaEntry& media) {
+    const bool same_media = src_preview_.has_media() && src_preview_.media_path() == media.path;
     src_preview_.open_media(media, project_ ? project_->sequence.fps : 30.0);
+    if (!same_media) {
+        src_mark_in_ = -1;
+        src_mark_out_ = -1;
+    }
+    if (source_panel_) source_panel_->setFocus(Qt::OtherFocusReason);
+    update_mark_status();
 }
 
 void MainWindow::clear_source_preview() {
     src_preview_.close_media();
+    src_mark_in_ = -1;
+    src_mark_out_ = -1;
+    update_mark_status();
 }
 
 void MainWindow::on_position_changed(const int64_t frame_number) {

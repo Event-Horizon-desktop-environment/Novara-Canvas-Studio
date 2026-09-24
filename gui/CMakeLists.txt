@@ -39,6 +39,8 @@ qt_add_executable(canvas
     src/UX/InspectorShared.hpp
     src/UX/ActionSearch.cpp
     src/UX/ActionSearch.hpp
+    src/UX/KeyboardCustomizationDialog.cpp
+    src/UX/KeyboardCustomizationDialog.hpp
     src/UX/InspectorVisual.hpp
     src/UX/InspectorAudio.hpp
     src/UX/InspectorTransition.hpp
@@ -69,8 +71,12 @@ qt_add_executable(canvas
     src/features/timeline/audio_targets.cpp
     src/features/timeline/SubtitleActions.cpp
     src/features/timeline/subtitle_dialog.cpp
+    src/features/timeline/ThreePointActions.cpp
     src/features/timeline/timeline_view_options.cpp
     src/features/timeline/view_options_menu.cpp
+    src/features/shortcuts/shortcut_catalog.cpp
+    src/features/shortcuts/shortcut_manager.cpp
+    src/features/shortcuts/ShortcutActions.cpp
 
     src/features/playback/sequence_controller.cpp
     src/features/playback/audio_pipeline.cpp
@@ -103,6 +109,7 @@ qt_add_executable(canvas
     src/features/color/color_page.cpp
 
     src/Widgets/viewer_gl.cpp
+    src/Widgets/keyboard_map_widget.cpp
     src/Widgets/media_pool_widget.cpp
     src/Widgets/timeline_widget.cpp
     src/Widgets/timeline_view.cpp

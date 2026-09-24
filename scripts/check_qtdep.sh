@@ -51,6 +51,8 @@ HEADLESS=(
     "gui/src/features/deliver/deliver_settings_model.cpp"
     "gui/src/features/source_preview/source_preview_model.hpp"
     "gui/src/features/source_preview/source_preview_model.cpp"
+    "gui/src/features/shortcuts/shortcut_catalog.hpp"
+    "gui/src/features/shortcuts/shortcut_catalog.cpp"
     "gui/src/Widgets/timeline_snap.hpp"
     "gui/src/Widgets/timeline_snap.cpp"
     "gui/src/Widgets/timeline_selection.hpp"

@@ -13,94 +13,14 @@
 namespace canvas::gui {
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-    const bool ctrl = event->modifiers().testFlag(Qt::ControlModifier);
-    const bool shift = event->modifiers().testFlag(Qt::ShiftModifier);
-    const bool alt = event->modifiers().testFlag(Qt::AltModifier);
-
-    if (ctrl && event->key() == Qt::Key_S) { on_save_project(); return; }
-    if (ctrl && event->key() == Qt::Key_O) { on_open_project(); return; }
-    if (ctrl && event->key() == Qt::Key_I) { on_import_media(); return; }
-    if (ctrl && event->key() == Qt::Key_N) { on_new_project(); return; }
-    if (ctrl && event->key() == Qt::Key_D) { toggle_disable_selected_clip(); return; }
-    if (ctrl && event->key() == Qt::Key_T) { toggle_transition_on_selected(); return; }
-    if (ctrl && event->key() == Qt::Key_Z) {
-        const bool redoing = shift;
-        if (redoing && undo_.can_redo())
-            qDebug() << "[edit] REDO cmd=" << QString::fromStdString(undo_.next_redo_name());
-        else if (!redoing && undo_.can_undo())
-            qDebug() << "[edit] UNDO cmd=" << QString::fromStdString(undo_.next_undo_name())
-                       << "depth=" << undo_.count();
-        bool changed = false;
-        if (redoing) changed = undo_.redo(project_->sequence);
-        else changed = undo_.undo(project_->sequence);
-        if (changed) {
-            has_unsaved_changes_ = true;
-            refresh_timeline();
-            push_snapshot();
-        }
-        return;
-    }
+    if (dispatch_shortcut_event(event)) return;
 
     switch (event->key()) {
-    case Qt::Key_Space:
-        controller_.toggle_play_pause();
-        return;
-    case Qt::Key_K:
-        controller_.pause();
-        return;
-    case Qt::Key_J:
-        if (alt) break;
-        controller_.pause();
-        controller_.step(-1);
-        return;
-    case Qt::Key_L:
-        if (alt) break;
-        controller_.play();
-        return;
-    case Qt::Key_Left:
-        if (shift) { controller_.pause(); controller_.step(-static_cast<int64_t>(fps_)); }
-        else { controller_.pause(); controller_.step(-1); }
-        return;
-    case Qt::Key_Right:
-        if (shift) { controller_.pause(); controller_.step(static_cast<int64_t>(fps_)); }
-        else { controller_.pause(); controller_.step(1); }
-        return;
-    case Qt::Key_Home:
-        controller_.pause(); controller_.seek(0);
-        return;
-    case Qt::Key_End:
-        controller_.pause(); controller_.seek(total_frames_ - 1);
-        return;
-    case Qt::Key_A:
-        timeline_->set_tool(TimelineWidget::Tool::Select);
-        return;
-    case Qt::Key_B:
-        timeline_->set_tool(TimelineWidget::Tool::Blade);
-        return;
-    case Qt::Key_M:
-        toggle_bookmark_at_playhead();
-        return;
-    case Qt::Key_E:
-        place_selected_media(canvas::core::Placement::AppendAtEnd);
-        return;
     case Qt::Key_Insert:
         if (event->modifiers().testFlag(Qt::KeypadModifier)) break;
         return;
-    case Qt::Key_F9:
-        place_selected_media(canvas::core::Placement::Insert);
-        return;
     case Qt::Key_F10:
-        if (shift) break;
-        place_selected_media(canvas::core::Placement::Overwrite);
-        return;
-    case Qt::Key_F12:
-        place_selected_media(canvas::core::Placement::PlaceOnTop);
-        return;
-    case Qt::Key_Delete:
-        delete_selected_clip(true);
-        return;
-    case Qt::Key_Backspace:
-        delete_selected_clip(false);
+        if (event->modifiers().testFlag(Qt::ShiftModifier)) break;
         return;
     default:
         QMainWindow::keyPressEvent(event);

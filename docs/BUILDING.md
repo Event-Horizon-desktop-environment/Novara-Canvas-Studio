@@ -111,7 +111,7 @@ by root (built via `sudo just install` before), rebuild it as root again or
 ctest --test-dir build
 ```
 
-**77 tests**, split across four families (run `ctest --test-dir build -N` for
+**84 tests**, split across four families (run `ctest --test-dir build -N` for
 the authoritative list). Everything passes on this machine except two Vulkan
 render-kernel stubs (below), which SKIP-as-fail and are still WIP.
 
@@ -122,8 +122,10 @@ them need Qt or a display. They cover the model/edit path (`roundtrip`,
 (`colorsci`, `wheels_ui`, `curves`, `histogram`), media/GPU (`gpu_grade`,
 `gpu_select`, `vram_leak`, `sw_decode`, `sw_decode_clip`, `voice_isolation`,
 `transcribe`, `transcript`), and export (`export_sweep`, `scrub_bench`, `edl`,
-`loudness`, `chapters`, `qc`, `autosave`, `queue_policy`, `caption_burn`, the
-VAAPI/QSV/CUDA encode tests, and the `sw_encode_bench`/`*_bench` benchmarks).
+`loudness`, `chapters`, `qc`, `autosave`, `queue_policy`, `caption_burn`,
+`still_export`, `image_export`, `render_range`, `keymap`, `loudness_normalize`, the VAAPI/QSV/CUDA
+encode tests, and the
+`sw_encode_bench`/`*_bench` benchmarks).
 Some notable behaviours:
 
 - `roundtrip` — edit operations + project (de)serialization round-trip, plus
@@ -139,7 +141,7 @@ Some notable behaviours:
   `cuda_enc_bench`, `vram_leak`) skip cleanly (exit 2) when no working
   device/encoder is present.
 
-**GUI headless tests** (`gui/tests/`, 14 tests) — pure-logic modules extracted
+**GUI headless tests** (`gui/tests/`, 15 tests) — pure-logic modules extracted
 from the GUI so they can be tested with **no Qt linked and no display**. The
 CMake function `canvas_add_headless_test` is what keeps them honest: it
 compiles the exact production source into the test binary, so a stray Qt
@@ -159,12 +161,14 @@ include fails the build:
 - `timeline_volume_line_test` — volume-line dB↔y laws
 - `deliver_settings_model_test` — codec/container list model
 - `source_preview_model_test` — single-clip source-preview project
+- `shortcut_catalog_test` — keymap preset laws and conflict freedom
 
-**GUI Qt-linked tests** (`gui/tests/qt/`, 6 tests) — run offscreen
+**GUI Qt-linked tests** (`gui/tests/qt/`, 7 tests) — run offscreen
 (`QT_QPA_PLATFORM=offscreen`) with a real widget stack:
 `volume_line_drag_qt_test`, `waveform_placement_qt_test`,
 `thumbs_id_namespace_test`, `thumbs_disk_serve_test`,
-`wheel_panel_roundtrip_qt_test`, `theme_roundtrip_qt_test`.
+`wheel_panel_roundtrip_qt_test`, `theme_roundtrip_qt_test`,
+`shortcut_manager_qt_test`.
 
 **Vulkan tests** (`Vulkan-tests/`, 10 tests) — built only when Vulkan headers
 are found; skipped at runtime without a Vulkan device. Two of them,

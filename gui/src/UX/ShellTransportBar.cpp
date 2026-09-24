@@ -45,8 +45,12 @@ QWidget* build_transport_bar(MainWindow& mw) {
     auto* center = new QHBoxLayout;
     center->setSpacing(6);
     center->addWidget(btn(icon("chevron_left"), "Previous edit point", false));
-    center->addWidget(btn(icon("mark_in"), "Mark In (I)", false));
-    center->addWidget(btn(icon("mark_out"), "Mark Out (O)", false));
+    mw.mark_in_button_ = btn(icon("mark_in"), "Mark In (I)", false);
+    mw.mark_out_button_ = btn(icon("mark_out"), "Mark Out (O)", false);
+    center->addWidget(mw.mark_in_button_);
+    center->addWidget(mw.mark_out_button_);
+    QObject::connect(mw.mark_in_button_, &QToolButton::clicked, &mw, [&mw] { mw.mark_in(); });
+    QObject::connect(mw.mark_out_button_, &QToolButton::clicked, &mw, [&mw] { mw.mark_out(); });
     center->addWidget(btn(icon("chevron_right"), "Next edit point", false));
     center->addSpacing(12);
 

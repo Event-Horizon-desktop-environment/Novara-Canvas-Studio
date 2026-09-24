@@ -23,6 +23,7 @@ struct RenderJob {
     DeliverSettings settings;
     std::string output_path;
     int64_t total_frames = 0;
+    int64_t start_frame = 0;
     int priority = 0;
 
     enum class Status { Queued, Rendering, Completed, Failed, Cancelled };

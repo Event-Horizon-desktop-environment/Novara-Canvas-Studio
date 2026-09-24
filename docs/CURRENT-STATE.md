@@ -16,8 +16,8 @@ with clear explanations.
   (and `build-release/`). `-Werror` is PUBLIC on `canvas_core`
   (`-Wall -Wextra -Wpedantic`), so every consumer — the GUI app, all core
   tests, all headless/Qt/Vulkan tests — inherits it.
-- **Tests:** 77 in CTest (`ctest --test-dir build`) — 47 core + 14
-  GUI-headless + 6 GUI Qt-linked (offscreen) + 10 Vulkan. 75 pass; the two
+- **Tests:** 84 in CTest (`ctest --test-dir build`) — 52 core + 15
+  GUI-headless + 7 GUI Qt-linked (offscreen) + 10 Vulkan. 82 pass; the two
   non-passing tests are SKIP-as-fail WIP stubs (`scrub_bench_vulkan_test`,
   `visual_render_parity_test`) owned by the unfinished Vulkan render kernel —
   not regressions.
@@ -33,10 +33,13 @@ with clear explanations.
   export, and the Inspector
 - Timeline model (de)serialization to `.ncs` (JSON), versioned; legacy
   `.ehproj` still opens
-- Markers/bookmarks (point + range), 3-point editing law, track add/remove/
+- Markers/bookmarks (point + range), 3-point editing (headless mark-resolve law
+  plus the Mark In/Out → insert/overwrite GUI wiring), track add/remove/
   collapse ops, clip blend modes — all headless-layered and regression-tested
 - Autosave (`.autosave-` turnover slots), action registry + Ctrl+K-style
-  action search, background render-queue policy — all headless-layered
+  action search, Resolve-style keyboard customization with DaVinci Resolve /
+  Premiere Pro / Avid / Final Cut Pro / Pro Tools presets, background
+  render-queue policy — all headless-layered
 
 **The timeline UI**
 - Dark, tool-grade UI with pinned top strip: live timecode readout,
@@ -113,13 +116,9 @@ with clear explanations.
 - **Transition-handle preset snapping is a no-op** — a documented latent bug
   in the drag-session editor, locked by a test; the one-line fix is
   `best = INT64_MAX`.
-- **`I` key collision** — `I` is bound to both Mark In and the Inspector
-  toggle (documented collision).
-- **Export-wiring gaps in newer Deliver fields** — audio loudness
-  normalization (target LUFS), data burn-in / caption burn, and
-  still/frame-sequence render scopes have UI + headless laws + regression
-  tests and persist in project files, but are not yet applied by the
-  mux/encode path (open wiring).
+- **Export-wiring gaps in newer Deliver fields** — data burn-in / caption
+  burn have UI + headless laws + regression tests and persist in project
+  files, but are not yet applied by the mux/encode path (open wiring).
 - **GPU is a build-time bonus, not a requirement.** Without CUDA you get CPU
   encoding; without ALSA/PipeWire you get no audio but still full video.
 - **Automated GUI coverage is offscreen-widget-only** — 6 Qt-linked tests run

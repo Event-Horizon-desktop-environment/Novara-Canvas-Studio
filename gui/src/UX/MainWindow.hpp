@@ -27,6 +27,7 @@
 #include "features/playback/sequence_controller.hpp"
 #include "features/source_preview/source_preview_controller.hpp"
 #include "features/source_preview/source_viewer_panel.hpp"
+#include "features/shortcuts/shortcut_manager.hpp"
 #include "features/thumbnails/thumbnail_service.hpp"
 #include "features/timeline/subtitle_dialog.hpp"
 #include "features/timeline/timeline_view_options.hpp"
@@ -171,9 +172,20 @@ private:
     void apply_clip_color(uint8_t color);
     void add_title_clip();
     void ensure_tracks_at(canvas::core::Track::Kind kind, std::size_t index);
-    bool place_selected_media(canvas::core::Placement mode);
+    bool three_point_place(canvas::core::Placement mode);
+    void mark_in();
+    void mark_out();
+    void clear_in_out();
+    void update_mark_status();
+    void create_range_from_marks();
+    void open_keyboard_customization();
+    bool dispatch_shortcut_event(QKeyEvent* event);
+    void split_selected_clips_at_playhead();
+    void toggle_clip_link();
+    [[nodiscard]] bool source_monitor_focused() const;
     bool place_media_at(canvas::core::MediaId media_id, int64_t frame, canvas::core::Placement mode,
-                        std::optional<double> drop_scene_y = std::nullopt);
+                        std::optional<double> drop_scene_y = std::nullopt, int64_t src_in = -1,
+                        int64_t src_out = -1);
     void finish_subtitle_transcription(canvas::core::transcribe::Report report);
     void place_title_at(const QString& preset_id, int64_t frame);
     void apply_transition_from_toolbox(const QString& transition_id, int64_t frame,
@@ -197,6 +209,7 @@ private:
                            canvas::core::Clip& out_clip) const;
 
     Ui::MainWindow* ui = nullptr;
+    shortcuts::ShortcutManager shortcuts_;
     QMenu* open_recent_menu_ = nullptr;
     QAction* inspector_toggle_action_ = nullptr;
     QToolButton* inspector_top_btn_ = nullptr;
@@ -209,8 +222,14 @@ private:
     TimelineViewOptions view_options_;
     QSlider* scrub_ = nullptr;
     QToolButton* play_button_ = nullptr;
+    QToolButton* mark_in_button_ = nullptr;
+    QToolButton* mark_out_button_ = nullptr;
     QLabel* time_label_ = nullptr;
     QStatusBar* status_ = nullptr;
+    int64_t src_mark_in_ = -1;
+    int64_t src_mark_out_ = -1;
+    int64_t tl_mark_in_ = -1;
+    int64_t tl_mark_out_ = -1;
     QLabel* fps_label_ = nullptr;
     QTimer* fps_timer_ = nullptr;
     QElapsedTimer fps_clock_;

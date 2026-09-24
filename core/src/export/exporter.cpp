@@ -5,9 +5,12 @@
 #include "canvas/core/export/qsv_encode.hpp"
 #include "canvas/core/gpu/colorspace.hpp"
 #include "canvas/core/gpu/cuda_convert.hpp"
+#include "canvas/core/export/loudness.hpp"
 #include "canvas/core/media/hw_device.hpp"
+#include "canvas/core/timeline/audio_mix.hpp"
 #include "canvas/core/timeline/title.hpp"
 #include "canvas/core/util/log.hpp"
+#include "canvas/core/util/nvtx.hpp"
 
 #include <cctype>
 #include <cstdlib>
@@ -385,7 +388,7 @@ public:
 
     void after_send() {
         if (kind == ExportBackend::Cuda)
-            canvas::core::gpu::convert_nv12_device_sync();
+            canvas::core::gpu::convert_nv12_sync();
     }
     void account_stalls() {
         if (kind == ExportBackend::Cuda)
@@ -806,6 +809,7 @@ int qsv_preset_for(const std::string& codec, const std::string& preset) {
 
 bool export_project(const Project& project, const ExportSettings& s, ExportControl* control,
                     std::string* error) {
+    const nvtx::ScopedRange range("export");
     const auto fail = [&](const std::string& m) {
         ::canvas::core::log::log_error("render failure: %s", m.c_str());
         if (error) *error = m;
@@ -819,6 +823,9 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
         return fail("Output path is missing. Choose an output folder on the Deliver panel.");
     if (s.video_codec.empty())
         return fail("No video codec selected.");
+    if (s.start_frame != 0 && !s.chapters.empty())
+        return fail("Chunked export does not support embedded chapters yet.");
+    const int64_t tl_base = s.start_frame > 0 ? s.start_frame : 0;
 
     const AVOutputFormat* out_fmt = av_guess_format(s.format.c_str(), s.output_path.c_str(), nullptr);
     if (!out_fmt) out_fmt = av_guess_format(nullptr, s.output_path.c_str(), nullptr);
@@ -1121,6 +1128,8 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
 
     int64_t frame = 0;
     int64_t audio_sample = 0;
+    if (tl_base != 0 && seq_fps > 0.0 && s.audio_sample_rate > 0)
+        audio_sample = (int64_t)std::llround((double)tl_base / seq_fps * s.audio_sample_rate);
     bool ended = false;
 
     canvas::core::log::RenderTelemetry telemetry;
@@ -1141,6 +1150,41 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     pump.throttle = &preview_throttle;
     pump.push_preview = push_preview;
 
+    float audio_gain = 1.0f;
+    if (do_audio && s.normalize_loudness && total_audio > audio_sample && !cancelled()) {
+        progress(0.0, "Analyze");
+        loudness::Accumulator measured(static_cast<double>(s.audio_sample_rate),
+                                       s.audio_channels);
+        {
+            RenderSession probe;
+            if (probe.begin(project, s.width, s.height, pump.dec_dev)) {
+                const int chunk = std::max<int>(
+                    1, (int)std::llround((double)s.audio_sample_rate /
+                                         std::max(1.0, export_fps)));
+                int64_t pos = audio_sample;
+                while (pos < total_audio && !cancelled()) {
+                    const int want = (int)std::min<int64_t>(chunk, total_audio - pos);
+                    auto ac = probe.audio_chunk(pos, want, s.audio_sample_rate,
+                                                s.audio_channels, export_fps);
+                    if (!ac || ac->samples.empty()) break;
+                    measured.push(ac->samples);
+                    pos += std::max<int64_t>(want, 1);
+                    progress(0.5 * (double)(pos - audio_sample) /
+                                 (double)(total_audio - audio_sample),
+                             "Analyze");
+                }
+            }
+        }
+        if (!cancelled()) {
+            const float gain_db = loudness::normalization_gain_db(
+                measured.lufs(), s.normalize_target_lufs);
+            audio_gain = audio_mix::db_to_gain(gain_db);
+            log::log_info("export: loudness normalize target=%.1f LUFS gain=%.2f dB",
+                          (double)s.normalize_target_lufs, (double)gain_db);
+        }
+        progress(0.0, "Encode");
+    }
+
     const std::size_t producer_depth = 64;
     std::mutex qmu;
     std::condition_variable qcv;
@@ -1152,7 +1196,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     std::deque<ProducerSlot> ready_frames;
     bool producer_done = false;
     auto render_one_frame = [&](const int64_t f) -> std::tuple<AVFrame*, void*, AVFrame*> {
-        const int64_t tl = (int64_t)std::llround((double)f * tl_per_frame);
+        const int64_t tl = tl_base + (int64_t)std::llround((double)f * tl_per_frame);
         PumpFrame slot = pump.produce(tl, f);
         return {slot.frame, slot.event, slot.source};
     };
@@ -1160,6 +1204,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     auto producer_thread_fn = [&] {
         int64_t f = 0;
         while (f < total_video) {
+            const nvtx::ScopedRange range("produce");
             auto [frm, ev, src] = render_one_frame(f);
             if (ev) {
                 canvas::core::gpu::convert_nv12_wait_event(ev);
@@ -1191,8 +1236,8 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
         std::thread producer(producer_thread_fn);
 
         while (!ended && !cancelled()) {
+            const nvtx::ScopedRange range("encode");
             AVFrame* to_send = nullptr;
-            void* ev = nullptr;
             AVFrame* src = nullptr;
             {
                 std::unique_lock<std::mutex> lk(qmu);
@@ -1203,14 +1248,12 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
                     auto slot = ready_frames.front();
                     ready_frames.pop_front();
                     to_send = slot.frame;
-                    ev = slot.event;
                     src = slot.source;
                     telemetry.observe_queue(ready_frames.size());
                 }
             }
             qcv.notify_all();
 
-            if (ev) canvas::core::gpu::convert_nv12_wait_event(ev);
             if (src) av_frame_unref(src);
 
             const auto enc_t0 = std::chrono::steady_clock::now();
@@ -1255,8 +1298,12 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
                 const int n = (ac && !ac->samples.empty())
                     ? (int)(ac->samples.size() / s.audio_channels)
                     : 0;
-                if (n > 0)
-                    a_acc.insert(a_acc.end(), ac->samples.begin(), ac->samples.end());
+                if (n > 0) {
+                    if (audio_gain != 1.0f)
+                        for (const float v : ac->samples) a_acc.push_back(v * audio_gain);
+                    else
+                        a_acc.insert(a_acc.end(), ac->samples.begin(), ac->samples.end());
+                }
                 audio_sample += std::max<int64_t>(n, per_frame);
                 const std::size_t ch = (std::size_t)s.audio_channels;
                 while (a_acc.size() >= (std::size_t)a_frame_size * ch) {
@@ -1329,7 +1376,8 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     } else {
 
     while (!ended && !cancelled()) {
-        const int64_t tl = (int64_t)std::llround((double)frame * tl_per_frame);
+        const nvtx::ScopedRange range("encode");
+        const int64_t tl = tl_base + (int64_t)std::llround((double)frame * tl_per_frame);
         if (frame < total_video) {
             PumpFrame slot = pump.produce(tl, frame);
             if (slot.frame) {
@@ -1353,8 +1401,12 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
             const int n = (ac && !ac->samples.empty())
                 ? (int)(ac->samples.size() / s.audio_channels)
                 : 0;
-            if (n > 0)
-                a_acc.insert(a_acc.end(), ac->samples.begin(), ac->samples.end());
+            if (n > 0) {
+                if (audio_gain != 1.0f)
+                    for (const float v : ac->samples) a_acc.push_back(v * audio_gain);
+                else
+                    a_acc.insert(a_acc.end(), ac->samples.begin(), ac->samples.end());
+            }
             audio_sample += std::max<int64_t>(n, per_frame);
             const std::size_t ch = (std::size_t)s.audio_channels;
             while (a_acc.size() >= (std::size_t)a_frame_size * ch) {

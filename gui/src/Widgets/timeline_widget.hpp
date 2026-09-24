@@ -126,6 +126,7 @@ public:
     void set_sequence(const canvas::core::Sequence* sequence);
     void set_fps(double fps);
     void set_playhead_position(int64_t frame);
+    void set_marks(int64_t tl_in, int64_t tl_out);
     void set_tool(Tool tool);
     void set_snap_enabled(bool enabled);
     [[nodiscard]] int64_t snap_frame(int64_t frame) const;
@@ -314,6 +315,8 @@ private:
     double fps_ = 30.0;
     double frames_per_pixel_ = 1.0;
     int64_t playhead_frame_ = 0;
+    int64_t marks_in_ = -1;
+    int64_t marks_out_ = -1;
     bool follow_playhead_ = true;
     Tool current_tool_ = Tool::Select;
     bool snap_enabled_ = true;

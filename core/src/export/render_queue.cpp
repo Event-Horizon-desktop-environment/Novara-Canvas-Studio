@@ -2,6 +2,8 @@
 
 #include "canvas/core/export/exporter.hpp"
 #include "canvas/core/export/chapters.hpp"
+#include "canvas/core/export/image_export.hpp"
+#include "canvas/core/export/parallel_chunk.hpp"
 #include "canvas/core/export/queue_policy.hpp"
 #include "canvas/core/project/project.hpp"
 #include "canvas/core/util/log.hpp"
@@ -39,6 +41,7 @@ RenderJobSnapshot render_job_snapshot(const RenderJob& job) {
     s.output_path = job.output_path;
     s.settings = job.settings;
     s.total_frames = job.total_frames;
+    s.start_frame = job.start_frame;
     s.priority = job.priority;
     s.status = static_cast<int>(job.status);
     s.progress = job.progress;
@@ -57,6 +60,7 @@ RenderJob render_job_from_snapshot(const RenderJobSnapshot& snap) {
     j.output_path = snap.output_path;
     j.settings = snap.settings;
     j.total_frames = snap.total_frames;
+    j.start_frame = snap.start_frame;
     j.priority = snap.priority;
     j.status = static_cast<RenderJob::Status>(snap.status);
     if (j.status == RenderJob::Status::Rendering) j.status = RenderJob::Status::Queued;
@@ -361,7 +365,8 @@ void RenderQueue::worker() {
             ExportSettings es = to_export_settings(local.settings);
             es.output_path = local.output_path;
             es.duration_frames = local.total_frames;
-            if (project)
+            es.start_frame = local.start_frame;
+            if (project && !scope_is_image(local.settings.render_scope))
                 chapters::apply(es, project->sequence,
                                 local.settings.video.chapters_from_markers);
             const double seq_fps = project ? project->sequence.fps : 0.0;
@@ -392,7 +397,7 @@ void RenderQueue::worker() {
                     win_done = f;
                     win_t = now;
                 }
-                fps.store(win_peak > 0.0 ? win_peak : (secs > 0.0 ? f / secs : 0.0));
+                fps.store(win_peak > 0.0 ? win_peak : (secs >= 0.5 ? f / secs : 0.0));
                 {
                     std::lock_guard<std::mutex> lk(mutex_);
                     for (auto& j : jobs_) {
@@ -466,6 +471,14 @@ bool RenderQueue::run_job(
         if (error) *error = "No project set for render job.";
         return false;
     }
+    if (scope_is_image(es.render_scope)) return export_image_frames(*project, es, ctrl, error);
+    if (es.parallel_chunks > 1 && es.duration_frames >= 60 && es.audio_codec.empty() &&
+        es.chapters.empty() && !es.normalize_loudness)
+        return export_parallel_chunks(*project, es, es.parallel_chunks, ctrl, error);
+    if (es.parallel_chunks > 1)
+        ::canvas::core::log::log_warning(
+            "render queue: parallel chunks skipped (needs video-only, no chapters, "
+            "loudness normalization off, >=60 frames)");
     return export_project(*project, es, ctrl, error);
 }
 

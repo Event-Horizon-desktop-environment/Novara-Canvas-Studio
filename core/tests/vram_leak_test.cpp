@@ -23,6 +23,8 @@ extern "C" {
 
 using namespace canvas::core;
 
+#ifdef CANVAS_HAVE_CUDA
+
 static int32_t g_failures = 0;
 
 static void report(bool ok, const char* what) {
@@ -99,16 +101,12 @@ static bool make_source(const std::string& path, int w, int h, int fps,
     return true;
 }
 
-#ifdef CANVAS_HAVE_CUDA
 static long long vram_free_mib() {
     std::size_t free_b = 0, total_b = 0;
     const cudaError_t e = cudaMemGetInfo(&free_b, &total_b);
     if (e != cudaSuccess) return -1;
     return static_cast<long long>(free_b / (1024 * 1024));
 }
-#else
-static long long vram_free_mib() { return -1; }
-#endif
 
 static const int kFps = 30;
 static const int kFrames = 700;
@@ -116,6 +114,8 @@ static const int kGopFrames = 250;
 static const int kW = 2560;
 static const int kH = 1440;
 static constexpr long long kLeakToleranceMiB = 256;
+
+#endif
 
 int main() {
 #ifdef CANVAS_HAVE_CUDA

@@ -1,14 +1,14 @@
 # Novara Canvas Studio — Features
 
-Current as of 2026-09-17. Items marked **WIP** are usable but have known
+Current as of 2026-09-24. Items marked **WIP** are usable but have known
 limits, or are on the roadmap and not done yet; everything else is implemented
 and exercised by the test suite and/or regular use.
 
 Verification baseline: the project builds warning-free in Debug and Release
-(`./build.sh`), and 75 of 77 CTest tests pass (the two non-passing tests are
+(`./build.sh`), and 82 of 84 CTest tests pass (the two non-passing tests are
 Vulkan SKIP-as-fail WIP stubs owned by the unfinished Vulkan render kernel —
 see *Hardware acceleration* below). Tests run with `ctest --test-dir build`:
-47 core + 14 GUI-headless + 6 GUI Qt-linked (offscreen) + 10 Vulkan.
+52 core + 15 GUI-headless + 7 GUI Qt-linked (offscreen) + 10 Vulkan.
 
 ## Editing (timeline)
 
@@ -26,9 +26,16 @@ see *Hardware acceleration* below). Tests run with `ctest --test-dir build`:
 - Clip colours: Resolve-style 12-swatch wheel (Inspector + Clip menu).
 - Per-clip volume line (drag directly on the audio clip) with accurate
   waveform-scaled preview; multi-select audio targets for mass gain edits.
-- Markers/bookmarks (M). Mark In/Out are declared in the Mark menu and
-  transport bar (I / O / Alt+X) but their handlers are not wired yet — the
-  3-point laws and tests have landed (see docs/PHASE1.md).
+- Markers/bookmarks (M) plus 3-point in/out marks: Mark In / Mark Out / Clear
+  (`I` / `O` / `Alt+X`) act on the source monitor when it has focus (opening
+  media focuses it) and on the timeline otherwise; the timeline in/out range is
+  shaded on the ruler and both monitors' marks show as timecode in the status
+  bar. Mark → "Create Range from In/Out" (`Alt+R`) turns those marks into a
+  named range (persisted, feeds chapters; drawn as an amber ruler band).
+  Insert/overwrite (`F9` / `F10`, `,` / `.`, also `E` / `F12`) resolve
+  through the headless `three_point::resolve` law — source marks when the source
+  monitor is the source, timeline mark-in else the playhead — as one undoable
+  linked edit (see docs/PHASE1.md, E2).
 - Clip enable/disable toggle (Ctrl+D), link indicator, blade (B) and
   select (A) tools.
 - Track collapse/expand (per-track chevrons or Collapse/Expand All) as one
@@ -119,6 +126,19 @@ see *Hardware acceleration* below). Tests run with `ctest --test-dir build`:
   from the timeline's clip layout.
 - Chapter markers: with "Chapters from markers" enabled in Deliver
   settings, bookmarks export as chapters into MP4/WebM/MKV-family files.
+- Still + frame-sequence export: the Deliver scope picker offers
+  "Current frame (still)" (the frame under the playhead) and "Frame
+  sequence" (every frame as `<name>_00001.png …`); both render through the
+  export `RenderSession` and write lossless PNGs (`export/image_export`).
+- In/Out range export: the same picker offers "In/Out range", which renders
+  only the marked timeline window — resolved by the headless
+  `render_range_window` law (no marks = the whole timeline, flagged on the
+  status bar) and handed to the exporter as `start_frame` + frame count.
+  "Individual clips" jobs now start at each clip's timeline in.
+- Loudness normalization: "Normalize Loudness" + target LUFS in Deliver
+  measures the mix before encoding (`loudness::Accumulator`) and applies one
+  constant gain so the muxed output lands on target (±1 LU, locked by the
+  `loudness_normalize` test).
 - Export sweep test covers every valid codec×container combination.
 
 ## Hardware acceleration
@@ -146,6 +166,12 @@ see *Hardware acceleration* below). Tests run with `ctest --test-dir build`:
 - Full menu bar (app menu + File/Edit/Trim/Timeline/Clip/Mark/View/
   Playback; Fusion/Color/Fairlight/Workspace shells present).
 - Glassy custom style (QProxyStyle), SVG icon set, rounded popup menus.
+- Keyboard customization (`Edit > Keyboard Customization...`, `Ctrl+Alt+K`):
+  Resolve-style dialog with a clickable keyboard map, Active Key panel,
+  searchable command tree, and presets for DaVinci Resolve (default), Adobe
+  Premiere Pro, Avid Media Composer, Final Cut Pro, and Pro Tools. Custom
+  bindings persist (`shortcuts/preset`, `shortcuts/custom/...`) and apply to
+  menus, the command palette, and the main key handler.
 - Keyboard shortcut set documented in `docs/KEYBINDS.md`.
 
 ## Known limitations
@@ -155,12 +181,10 @@ see *Hardware acceleration* below). Tests run with `ctest --test-dir build`:
   is planned.
 - `AudioOutput::flush()` must join its writer thread before being dropped; this
   is documented in code and worked around at call sites.
-- The `I` key doubles as Mark In and Inspector toggle (documented collision).
 - Transition-handle preset snapping is currently a no-op (documented latent
   bug, locked by a test; one-line fix identified).
 - Deliver fields with UI + headless laws + regression tests that aren't yet
-  applied by the mux/encode path: audio loudness normalization (target LUFS),
-  data burn-in / caption burn, and still / frame-sequence render scopes.
+  applied by the mux/encode path: data burn-in / caption burn.
 - Linux-only, by design.
 
 For architecture and testing details see `docs/ARCHITECTURE.md`,

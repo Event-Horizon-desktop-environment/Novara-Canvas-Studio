@@ -39,6 +39,7 @@ private:
     void connect_all();
     void set_encoder_key(const QString& key);
     void update_bitrate_visibility();
+    void update_scope_state();
     void update_estimate();
 
     QTabWidget* tabs_ = nullptr;
@@ -73,6 +74,7 @@ private:
     QWidget* max_bitrate_row_ = nullptr;
     QSpinBox* max_bitrate_spin_ = nullptr;
     QComboBox* multi_encode_combo_ = nullptr;
+    QComboBox* parallel_chunks_combo_ = nullptr;
     QComboBox* preset_q_combo_ = nullptr;
     QComboBox* tuning_combo_ = nullptr;
     QCheckBox* two_pass_ = nullptr;
@@ -91,6 +93,8 @@ private:
     QSpinBox* audio_bitrate_ = nullptr;
     QComboBox* audio_rate_combo_ = nullptr;
     QComboBox* audio_channels_combo_ = nullptr;
+    QCheckBox* normalize_audio_ = nullptr;
+    QDoubleSpinBox* normalize_lufs_ = nullptr;
 
     QComboBox* pixel_aspect_combo_ = nullptr;
     QComboBox* data_levels_combo_ = nullptr;

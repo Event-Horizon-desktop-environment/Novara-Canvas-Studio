@@ -1,5 +1,6 @@
 #include "UX/MainWindow.hpp"
 
+#include "core/timecode.hpp"
 #include "features/deliver/deliver_settings_panel.hpp"
 #include "features/deliver/render_queue_panel.hpp"
 
@@ -126,9 +127,17 @@ void MainWindow::add_current_to_render_queue() {
     QString dir = QString::fromStdString(ds.file.location);
     if (dir.trimmed().isEmpty())
         dir = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
-    const QString ext = extension_for_format(ds.video.format);
+    const bool still_scope = canvas::core::scope_is_still(ds.render_scope);
+    const bool sequence_scope = canvas::core::scope_is_sequence(ds.render_scope);
+    const bool image_scope = canvas::core::scope_is_image(ds.render_scope);
+    const bool range_scope = canvas::core::scope_is_range(ds.render_scope);
+    const QString ext = image_scope ? QStringLiteral("png") : extension_for_format(ds.video.format);
     const QString out_path =
         QDir(dir).filePath(QString::fromStdString(ds.file.file_name) + QStringLiteral(".") + ext);
+
+    const int64_t total = controller_.total_frames();
+    const canvas::core::RenderRange range = canvas::core::render_range_window(
+        tl_mark_in_, tl_mark_out_, controller_.current_frame(), total);
 
     render_queue_.set_active_project(std::make_shared<const canvas::core::Project>(*project_), {});
 
@@ -145,6 +154,7 @@ void MainWindow::add_current_to_render_queue() {
                 job.output_path =
                     QDir(dir).filePath(QString::fromStdString(job.name) + QStringLiteral(".") + ext)
                         .toStdString();
+                job.start_frame = clip.tl_in;
                 job.total_frames = clip.duration();
                 render_queue_.enqueue(std::move(job));
                 ++index;
@@ -155,13 +165,38 @@ void MainWindow::add_current_to_render_queue() {
         job.name = ds.file.file_name;
         job.settings = ds;
         job.output_path = out_path.toStdString();
-        job.total_frames = controller_.total_frames();
+        job.total_frames = still_scope ? 1 : total;
+        if (still_scope) {
+            int64_t frame = controller_.current_frame();
+            if (frame < 0) frame = 0;
+            if (total > 0 && frame >= total) frame = total - 1;
+            job.start_frame = frame;
+        } else if (range_scope) {
+            job.start_frame = range.start;
+            if (range.count > 0) job.total_frames = range.count;
+        }
         render_queue_.enqueue(std::move(job));
     }
 
     reflect_render_queue();
     has_unsaved_changes_ = true;
-    status_->showMessage(tr("Added render job(s) to the queue."));
+    if (still_scope) status_->showMessage(tr("Still export queued: %1").arg(out_path));
+    else if (sequence_scope)
+        status_->showMessage(tr("Frame sequence export queued: %1").arg(out_path));
+    else if (range_scope) {
+        if (tl_mark_in_ < 0 && tl_mark_out_ < 0)
+            status_->showMessage(
+                tr("Range export queued for the whole timeline — no in/out marks set (I / O)."));
+        else
+            status_->showMessage(
+                tr("Range export queued: %1 frame(s) from %2 → %3")
+                    .arg(range.count)
+                    .arg(timecode(range.start,
+                                  project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0))
+                    .arg(timecode(range.start + range.count,
+                                  project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0)));
+    } else
+        status_->showMessage(tr("Added render job(s) to the queue."));
 }
 
 void MainWindow::render_all_from_queue() {

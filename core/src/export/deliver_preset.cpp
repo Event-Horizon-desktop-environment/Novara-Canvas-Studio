@@ -68,6 +68,25 @@ bool scope_is_image(const RenderScope scope) noexcept {
     return scope_is_still(scope) || scope_is_sequence(scope);
 }
 
+bool scope_is_range(const RenderScope scope) noexcept {
+    return scope == RenderScope::Range;
+}
+
+RenderRange render_range_window(const int64_t mark_in, const int64_t mark_out,
+                                const int64_t playhead, const int64_t timeline_frames) noexcept {
+    const int64_t tl = timeline_frames > 0 ? timeline_frames : 0;
+    if (tl == 0) return {};
+    if (mark_in < 0 && mark_out < 0) return {0, tl};
+
+    int64_t in = mark_in >= 0 ? mark_in : (mark_out >= 0 ? (playhead > 0 ? playhead : 0) : 0);
+    if (in < 0) in = 0;
+    if (in >= tl) in = tl - 1;
+    int64_t out = mark_out >= 0 ? mark_out : tl;
+    if (out <= in) out = in + 1;
+    if (out > tl) out = tl;
+    return {in, out - in};
+}
+
 namespace {
 
 std::string image_stem(const std::string& base) {
@@ -192,6 +211,8 @@ ExportSettings to_export_settings(const DeliverSettings& ds) {
     es.audio_bitrate_kbps = ds.audio.bitrate_kbps;
     es.audio_sample_rate = ds.audio.sample_rate;
     es.audio_channels = ds.audio.channels;
+    es.normalize_loudness = ds.audio.normalize_audio;
+    es.normalize_target_lufs = ds.audio.normalize_target_lufs;
     es.remove_audio = !ds.audio.export_audio;
 
     es.width = ds.video.custom_width;
@@ -217,6 +238,8 @@ ExportSettings to_export_settings(const DeliverSettings& ds) {
                             encn.find("svt") != std::string::npos;
     es.preset = has_preset ? lower(ds.video.preset) : "";
     es.threads = ds.advanced.threads;
+    es.parallel_chunks = ds.video.parallel_chunks;
+    es.render_scope = ds.render_scope;
 
     switch (ds.video.rate_control) {
         case RateControl::ConstantQP:

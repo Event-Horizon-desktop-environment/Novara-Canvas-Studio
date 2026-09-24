@@ -78,6 +78,13 @@ void TimelineWidget::set_playhead_position(int64_t frame) {
     update_playhead_position(playhead_frame_);
 }
 
+void TimelineWidget::set_marks(int64_t tl_in, int64_t tl_out) {
+    marks_in_ = tl_in;
+    marks_out_ = tl_out;
+    rebuild_timeline();
+    update_playhead_position(playhead_frame_);
+}
+
 void TimelineWidget::set_tool(Tool tool) {
     current_tool_ = tool;
     setCursor(Qt::ArrowCursor);

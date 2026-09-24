@@ -39,6 +39,14 @@ struct ExportChapter {
     std::string title;
 };
 
+enum class RenderScope {
+    SingleClip,
+    IndividualClips,
+    Still,
+    FrameSequence,
+    Range,
+};
+
 struct ExportSettings {
     std::string output_path;
     std::string format;
@@ -48,11 +56,16 @@ struct ExportSettings {
     int height = 0;
     double fps = 30.0;
     int64_t duration_frames = 0;
+    int64_t start_frame = 0;
+    int parallel_chunks = 1;
+    RenderScope render_scope = RenderScope::SingleClip;
     int video_bitrate_kbps = 8000;
     int video_max_bitrate_kbps = 0;
     int audio_bitrate_kbps = 192;
     int audio_sample_rate = 48000;
     int audio_channels = 2;
+    bool normalize_loudness = false;
+    float normalize_target_lufs = -23.0f;
     int crf = -1;
     std::string vid_rc_mode = "auto";
     std::string preset = "medium";

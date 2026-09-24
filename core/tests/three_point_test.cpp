@@ -169,10 +169,99 @@ void test_linked_insert() {
           "linked undo restores both tracks");
 }
 
+void test_resolve_marks() {
+    {
+        three_point::ResolveInput in;
+        in.playhead = 7;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.src_in == 0 && m.src_out == 90 && m.tl_in == 7,
+              "unset marks -> whole source at the playhead");
+    }
+    {
+        three_point::ResolveInput in;
+        in.src_in = 10;
+        in.src_out = 40;
+        in.playhead = 5;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.src_in == 10 && m.src_out == 40 && m.tl_in == 5,
+              "source marks win and the playhead is the timeline fallback");
+    }
+    {
+        three_point::ResolveInput in;
+        in.src_in = 10;
+        in.src_out = 5;
+        in.tl_in = 3;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.src_out == m.src_in + 1 && m.tl_in == 3,
+              "inverted source out never inverts the span");
+    }
+    {
+        three_point::ResolveInput in;
+        in.src_in = 80;
+        in.src_out = 400;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.src_out == 90, "source out clamps to the media length");
+    }
+    {
+        three_point::ResolveInput in;
+        in.src_in = 500;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.src_in == 89 && m.src_out == 90, "source in past the end clamps to the last frame");
+    }
+    {
+        three_point::ResolveInput in;
+        in.tl_in = 10;
+        in.tl_out = 40;
+        in.media_frames = 600;
+        in.seq_fps = 30.0;
+        in.media_fps = 60.0;
+        const auto m = three_point::resolve(in);
+        check(m.src_in == 0 && m.src_out == 60,
+              "timeline in/out alone sizes the source span in source frames");
+        check(three_point::timeline_duration(m, 30.0, 60.0) == in.tl_out - in.tl_in,
+              "that span fills the timeline range");
+    }
+    {
+        three_point::ResolveInput in;
+        in.playhead = 10;
+        in.tl_out = 40;
+        in.media_frames = 600;
+        const auto m = three_point::resolve(in);
+        check(m.tl_in == 10 && m.src_out == 30,
+              "timeline out alone sizes the span from the playhead");
+    }
+    {
+        three_point::ResolveInput in;
+        in.tl_in = -1;
+        in.playhead = 12;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.tl_in == 12, "negative timeline mark falls back to the playhead");
+    }
+    {
+        three_point::ResolveInput in;
+        in.playhead = -5;
+        in.media_frames = 90;
+        const auto m = three_point::resolve(in);
+        check(m.tl_in == 0, "negative playhead clamps to zero");
+    }
+    {
+        three_point::ResolveInput in;
+        in.src_in = 4;
+        const auto m = three_point::resolve(in);
+        check(m.src_out == m.src_in + 1, "unknown media length still yields a one-frame span");
+    }
+}
 }
 
 int main() {
     test_duration_law();
+    test_resolve_marks();
     test_insert_ripples_and_splits();
     test_overwrite_replaces();
     test_linked_insert();

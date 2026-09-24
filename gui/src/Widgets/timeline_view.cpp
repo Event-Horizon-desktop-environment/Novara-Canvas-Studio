@@ -484,12 +484,34 @@ void TimelineWidget::draw_ruler() {
         const QBrush bk_brush(QColor(0xFF, 0xC1, 0x07));
         for (const auto& b : sequence_->bookmarks) {
             const double bx = kSceneMargin + kTrackHeaderWidth + b.frame / frames_per_pixel_;
+            if (b.tl_out > b.frame) {
+                const double bx1 = kSceneMargin + kTrackHeaderWidth + b.tl_out / frames_per_pixel_;
+                auto* band = scene_.addRect(
+                    QRectF(bx, top + 1, std::max(1.0, bx1 - bx), kRulerHeight - 2),
+                    QPen(QColor(0xFF, 0xC1, 0x07, 150)), QBrush(QColor(0xFF, 0xC1, 0x07, 55)));
+                if (top_pinned_) {
+                    band->setAcceptedMouseButtons(Qt::NoButton);
+                    top_pinned_->addToGroup(band);
+                }
+            }
             auto* bk = scene_.addRect(QRectF(bx - 3, top + kRulerHeight - 14, 6, 6),
                                       bk_pen, bk_brush);
             if (top_pinned_) {
                 bk->setAcceptedMouseButtons(Qt::NoButton);
                 top_pinned_->addToGroup(bk);
             }
+        }
+    }
+
+    if (marks_in_ >= 0 && marks_out_ > marks_in_) {
+        const double x0 = kSceneMargin + kTrackHeaderWidth + marks_in_ / frames_per_pixel_;
+        const double x1 = kSceneMargin + kTrackHeaderWidth + marks_out_ / frames_per_pixel_;
+        const QPen band_pen(QColor(0x7F, 0xC9, 0xFF, 220));
+        auto* band = scene_.addRect(QRectF(x0, top, std::max(1.0, x1 - x0), kRulerHeight), band_pen,
+                                    QBrush(QColor(0x7F, 0xC9, 0xFF, 50)));
+        if (top_pinned_) {
+            band->setAcceptedMouseButtons(Qt::NoButton);
+            top_pinned_->addToGroup(band);
         }
     }
 

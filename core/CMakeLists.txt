@@ -126,6 +126,7 @@ add_library(canvas_core STATIC
     src/media/transcribe.cpp
     src/qc/metrics.cpp
     src/actions/action_registry.cpp
+    src/actions/keymap.cpp
     src/timeline/model.cpp
     src/timeline/edit_ops.cpp
     src/timeline/blend.cpp
@@ -156,6 +157,8 @@ add_library(canvas_core STATIC
     src/export/vaapi_encode.cpp
     src/export/qsv_encode.cpp
     src/export/render_queue.cpp
+    src/export/image_export.cpp
+    src/export/parallel_chunk.cpp
 
     src/media/vaapi/surface.cpp
     src/media/vaapi/driver.cpp
@@ -370,6 +373,12 @@ set_target_properties(canvas_cuda_enc_bench PROPERTIES AUTOMOC OFF AUTORCC OFF A
 add_test(NAME cuda_enc_bench COMMAND canvas_cuda_enc_bench)
 set_tests_properties(cuda_enc_bench PROPERTIES TIMEOUT 300)
 
+add_executable(canvas_parallel_chunk_test tests/parallel_chunk_test.cpp)
+target_link_libraries(canvas_parallel_chunk_test PRIVATE canvas_core)
+set_target_properties(canvas_parallel_chunk_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME parallel_chunk COMMAND canvas_parallel_chunk_test)
+set_tests_properties(parallel_chunk PROPERTIES TIMEOUT 300)
+
 add_executable(canvas_blend_modes_test tests/blend_modes_test.cpp)
 target_link_libraries(canvas_blend_modes_test PRIVATE canvas_core)
 set_target_properties(canvas_blend_modes_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
@@ -384,6 +393,11 @@ add_executable(canvas_three_point_test tests/three_point_test.cpp)
 target_link_libraries(canvas_three_point_test PRIVATE canvas_core)
 set_target_properties(canvas_three_point_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
 add_test(NAME three_point COMMAND canvas_three_point_test)
+
+add_executable(canvas_render_range_test tests/render_range_test.cpp)
+target_link_libraries(canvas_render_range_test PRIVATE canvas_core)
+set_target_properties(canvas_render_range_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME render_range COMMAND canvas_render_range_test)
 
 add_executable(canvas_track_ops_test tests/track_ops_test.cpp)
 target_link_libraries(canvas_track_ops_test PRIVATE canvas_core)
@@ -415,6 +429,11 @@ target_link_libraries(canvas_actions_index_test PRIVATE canvas_core)
 set_target_properties(canvas_actions_index_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
 add_test(NAME actions_index COMMAND canvas_actions_index_test)
 
+add_executable(canvas_keymap_test tests/keymap_test.cpp)
+target_link_libraries(canvas_keymap_test PRIVATE canvas_core)
+set_target_properties(canvas_keymap_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME keymap COMMAND canvas_keymap_test)
+
 add_executable(canvas_queue_policy_test tests/queue_policy_test.cpp)
 target_link_libraries(canvas_queue_policy_test PRIVATE canvas_core)
 set_target_properties(canvas_queue_policy_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
@@ -429,6 +448,18 @@ add_executable(canvas_still_export_test tests/still_export_test.cpp)
 target_link_libraries(canvas_still_export_test PRIVATE canvas_core)
 set_target_properties(canvas_still_export_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
 add_test(NAME still_export COMMAND canvas_still_export_test)
+
+add_executable(canvas_image_export_test tests/image_export_test.cpp)
+target_link_libraries(canvas_image_export_test PRIVATE canvas_core)
+set_target_properties(canvas_image_export_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME image_export COMMAND canvas_image_export_test)
+set_tests_properties(image_export PROPERTIES TIMEOUT 300)
+
+add_executable(canvas_loudness_normalize_test tests/loudness_normalize_test.cpp)
+target_link_libraries(canvas_loudness_normalize_test PRIVATE canvas_core)
+set_target_properties(canvas_loudness_normalize_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME loudness_normalize COMMAND canvas_loudness_normalize_test)
+set_tests_properties(loudness_normalize PROPERTIES TIMEOUT 300)
 
 add_executable(canvas_caption_burn_test tests/caption_burn_test.cpp)
 target_link_libraries(canvas_caption_burn_test PRIVATE canvas_core)
