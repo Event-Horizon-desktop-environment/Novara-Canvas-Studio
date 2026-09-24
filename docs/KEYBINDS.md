@@ -38,16 +38,18 @@ The recent-files list is under File > Open Recent. The `CTRL+,` Preferences entr
 | `CTRL+Z` | Undo |
 | `CTRL+SHIFT+Z` | Redo |
 | `CTRL+K` | Find Action (searchable command palette) |
-| `CTRL+D` | Toggle disable / enable the selected clip |
+| `CTRL+ALT+K` | Keyboard Customization (keymap presets + custom bindings) |
+| `D` | Toggle disable / enable the selected clip |
 | `CTRL+T` | Add a transition on the selected clip |
 | `CTRL+ALT+T` | Add a title clip |
-| `DEL` | Ripple delete the selected clip |
-| `SHIFT+DEL` | Lift (delete, keeping the gap) |
-| `BACKSPACE` | Lift (same as SHIFT+DEL) |
+| `CTRL+BACKSLASH` | Add Edit (split selected clips at the playhead) |
+| `CTRL+ALT+L` | Link / unlink the selected clip |
+| `BACKSPACE` | Lift (delete, keeping the gap) |
+| `SHIFT+BACKSPACE` | Ripple delete the selected clip |
 
-`DEL` here is the timeline meaning. If the media pool has focus and items are selected, `DEL` deletes the pool items and ripple-deletes any clip selected on the timeline at once; `BACKSPACE` deletes only the pool items. When a transition bubble is selected on the timeline, `DEL` / `BACKSPACE` clear the transition rather than deleting a clip.
+`BACKSPACE` here is the timeline meaning. If the media pool has focus and items are selected, `DEL` deletes the pool items and ripple-deletes any clip selected on the timeline at once; `BACKSPACE` deletes only the pool items. When a transition bubble is selected on the timeline, `DEL` / `BACKSPACE` clear the transition rather than deleting a clip. `DEL` itself is left for widget-local handlers (media pool, transition bubbles, node graph).
 
-Declared in a menu but not wired to a handler yet: `CTRL+BACKSLASH` (Timeline > Add Edit), `CTRL+ALT+L` (Clip > Link/Unlink), and `U` (Trim > Cycle Edit Point Side). Link/unlink is reachable from the timeline right-click menu; Add Edit and cycle-edit-point have no working path at all.
+Declared in a menu but not wired to a handler yet: `U` (Trim > Cycle Edit Point Side). Link/unlink and Add Edit are now wired (see above); cycle-edit-point has no working path at all.
 
 ## Markers and in/out points
 
@@ -104,12 +106,12 @@ These place the source monitor's media when one is open (with its in/out marks â
 
 | Keys | Action |
 | --- | --- |
-| `E` | Append at end |
+| `SHIFT+F12` | Append at end |
 | `F9` | Insert |
 | `F10` | Overwrite |
 | `F12` | Place on top |
 
-`INS` no longer places a clip â€” the key handler swallows it without doing anything, so use `F9` to insert.
+`INS` no longer places a clip â€” the key handler swallows it without doing anything, so use `F9` to insert. Insert/overwrite additionally answer to `,`/`.` from the Mark menu in every preset that leaves those menu bindings alone.
 
 ## Application
 
@@ -117,6 +119,7 @@ These place the source monitor's media when one is open (with its in/out marks â
 | --- | --- |
 | `F11` | Toggle full screen |
 | `ALT+I` | Toggle the Inspector dock |
+| `CTRL+ALT+K` | Keyboard Customization |
 
 ## What is not bound yet
 

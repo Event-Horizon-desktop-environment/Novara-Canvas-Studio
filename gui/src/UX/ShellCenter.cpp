@@ -207,7 +207,7 @@ void build_center_workspace(MainWindow& mw) {
 
     make_tool(contextual_bar, "color_tag", "Track color", false);
     auto* marker_color = new QToolButton(contextual_bar);
-    marker_color->setIcon(icon("mark_in", QColor(0xC9, 0x86, 0x3A)));
+    marker_color->setIcon(icon("flag", QColor(0xC9, 0x86, 0x3A)));
     marker_color->setIconSize(QSize(14, 14));
     marker_color->setToolTip(MainWindow::tr("Marker color"));
     marker_color->setAutoRaise(true);
