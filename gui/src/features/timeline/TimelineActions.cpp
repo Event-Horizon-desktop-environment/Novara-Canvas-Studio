@@ -34,10 +34,10 @@ void MainWindow::apply_clip_color(const uint8_t color) {
     if (!find_selected_clip(kind, index, clip)) return;
     if (clip.clip_color == color) return;
 
-    auto cmd = canvas::core::set_clip_metadata(project_->sequence, kind, index, clip.id,
+    auto cmd = canvas::core::set_clip_metadata(project_->active_sequence(), kind, index, clip.id,
                                                clip.clip_tag, color, clip.comments, clip.name);
     if (!cmd) return;
-    undo_.record(std::move(cmd));
+    active_undo().record(std::move(cmd));
     has_unsaved_changes_ = true;
     push_snapshot();
     refresh_timeline();
@@ -45,7 +45,7 @@ void MainWindow::apply_clip_color(const uint8_t color) {
 }
 
 void MainWindow::connect_timeline() {
-    timeline_->set_sequence(&project_->sequence);
+    timeline_->set_sequence(&project_->active_sequence());
 
     connect(timeline_, &TimelineWidget::playhead_moved, this,
             [this](int64_t frame) {
@@ -89,14 +89,14 @@ void MainWindow::connect_timeline() {
             [this](float db) {
                 if (!project_) return;
                 const auto targets =
-                    resolve_audio_targets(project_->sequence, selected_clip_ids_);
+                    resolve_audio_targets(project_->active_sequence(), selected_clip_ids_);
                 bool any = false;
                 for (const auto& t : targets) {
                     if (std::abs(static_cast<double>(db) - t.clip.volume_db) < 0.05) continue;
-                    auto cmd = canvas::core::set_clip_audio(project_->sequence, t.kind, t.track,
+                    auto cmd = canvas::core::set_clip_audio(project_->active_sequence(), t.kind, t.track,
                                                             t.id, db, t.clip.pan);
                     if (!cmd) continue;
-                    undo_.record(std::move(cmd));
+                    active_undo().record(std::move(cmd));
                     any = true;
                 }
                 controller_.clear_live_clip_gains();
@@ -109,12 +109,12 @@ void MainWindow::connect_timeline() {
     connect(timeline_, &TimelineWidget::blade_requested, this,
             [this](const canvas::core::Clip* clip, int64_t frame) {
                 if (!clip || !project_) return;
-                for (std::size_t vi = 0; vi < project_->sequence.video_tracks.size(); ++vi) {
-                    if (project_->sequence.video_tracks[vi].clip_with_id(clip->id)) {
-                        auto cmd = canvas::core::blade_linked_at(project_->sequence, canvas::core::Track::Kind::Video,
+                for (std::size_t vi = 0; vi < project_->active_sequence().video_tracks.size(); ++vi) {
+                    if (project_->active_sequence().video_tracks[vi].clip_with_id(clip->id)) {
+                        auto cmd = canvas::core::blade_linked_at(project_->active_sequence(), canvas::core::Track::Kind::Video,
                                                              vi, frame);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] BLADE v_track=" << vi << "clip=" << clip->id
                                        << "at=" << frame;
                             has_unsaved_changes_ = true;
@@ -124,12 +124,12 @@ void MainWindow::connect_timeline() {
                         return;
                     }
                 }
-                for (std::size_t ai = 0; ai < project_->sequence.audio_tracks.size(); ++ai) {
-                    if (project_->sequence.audio_tracks[ai].clip_with_id(clip->id)) {
-                        auto cmd = canvas::core::blade_linked_at(project_->sequence, canvas::core::Track::Kind::Audio,
+                for (std::size_t ai = 0; ai < project_->active_sequence().audio_tracks.size(); ++ai) {
+                    if (project_->active_sequence().audio_tracks[ai].clip_with_id(clip->id)) {
+                        auto cmd = canvas::core::blade_linked_at(project_->active_sequence(), canvas::core::Track::Kind::Audio,
                                                              ai, frame);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] BLADE a_track=" << ai << "clip=" << clip->id
                                        << "at=" << frame;
                             has_unsaved_changes_ = true;
@@ -146,13 +146,13 @@ void MainWindow::connect_timeline() {
                    int dst_track) {
                 if (!clip || !project_) return;
                 std::size_t dst = static_cast<std::size_t>(dst_track);
-                for (std::size_t vi = 0; vi < project_->sequence.video_tracks.size(); ++vi) {
-                    if (project_->sequence.video_tracks[vi].clip_with_id(clip->id)) {
+                for (std::size_t vi = 0; vi < project_->active_sequence().video_tracks.size(); ++vi) {
+                    if (project_->active_sequence().video_tracks[vi].clip_with_id(clip->id)) {
                         auto cmd = canvas::core::move_clip(
-                            project_->sequence, canvas::core::Track::Kind::Video, vi, clip->id,
+                            project_->active_sequence(), canvas::core::Track::Kind::Video, vi, clip->id,
                             dst_kind, dst, new_tl_in);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] MOVE v_track=" << vi << "clip=" << clip->id
                                        << "-> tl_in=" << new_tl_in << "dst_kind="
                                        << (dst_kind == canvas::core::Track::Kind::Video ? "V" : "A")
@@ -164,13 +164,13 @@ void MainWindow::connect_timeline() {
                         return;
                     }
                 }
-                for (std::size_t ai = 0; ai < project_->sequence.audio_tracks.size(); ++ai) {
-                    if (project_->sequence.audio_tracks[ai].clip_with_id(clip->id)) {
+                for (std::size_t ai = 0; ai < project_->active_sequence().audio_tracks.size(); ++ai) {
+                    if (project_->active_sequence().audio_tracks[ai].clip_with_id(clip->id)) {
                         auto cmd = canvas::core::move_clip(
-                            project_->sequence, canvas::core::Track::Kind::Audio, ai, clip->id,
+                            project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, clip->id,
                             dst_kind, dst, new_tl_in);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] MOVE a_track=" << ai << "clip=" << clip->id
                                        << "-> tl_in=" << new_tl_in << "dst_kind="
                                        << (dst_kind == canvas::core::Track::Kind::Video ? "V" : "A")
@@ -193,10 +193,10 @@ void MainWindow::connect_timeline() {
                 for (const auto& mv : clips) {
                     if (std::find(reps.begin(), reps.end(), mv.id) != reps.end()) continue;
                     const canvas::core::Clip* c = nullptr;
-                    for (const auto& t : project_->sequence.video_tracks)
+                    for (const auto& t : project_->active_sequence().video_tracks)
                         if ((c = t.clip_with_id(mv.id))) break;
                     if (!c)
-                        for (const auto& t : project_->sequence.audio_tracks)
+                        for (const auto& t : project_->active_sequence().audio_tracks)
                             if ((c = t.clip_with_id(mv.id))) break;
                     if (!c) continue;
                     if (c->is_linked() &&
@@ -223,9 +223,9 @@ void MainWindow::connect_timeline() {
                         static_cast<std::size_t>(entry->track_index), entry->new_tl_in});
                 }
                 if (!batch.empty()) {
-                    auto cmd = canvas::core::move_clips_batch(project_->sequence, batch);
+                    auto cmd = canvas::core::move_clips_batch(project_->active_sequence(), batch);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         has_unsaved_changes_ = true;
                         any = true;
                     }
@@ -252,15 +252,15 @@ void MainWindow::connect_timeline() {
                 const auto commit = [&](canvas::core::Track::Kind kind, std::size_t track) {
                     std::unique_ptr<canvas::core::ICommand> cmd =
                         edge == TimelineWidget::TrimEdge::Head
-                            ? canvas::core::trim_clip_head(project_->sequence, kind, track,
+                            ? canvas::core::trim_clip_head(project_->active_sequence(), kind, track,
                                                            clip->id, new_frame, media_frames)
-                            : canvas::core::trim_clip_tail(project_->sequence, kind, track,
+                            : canvas::core::trim_clip_tail(project_->active_sequence(), kind, track,
                                                            clip->id, new_frame, media_frames);
                     if (!cmd) {
                         refresh_timeline();
                         return;
                     }
-                    undo_.record(std::move(cmd));
+                    active_undo().record(std::move(cmd));
                     qDebug() << "[edit] TRIM"
                                << (edge == TimelineWidget::TrimEdge::Head ? "head" : "tail")
                                << "kind=" << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
@@ -271,13 +271,13 @@ void MainWindow::connect_timeline() {
                     push_snapshot();
                 };
 
-                for (std::size_t vi = 0; vi < project_->sequence.video_tracks.size(); ++vi)
-                    if (project_->sequence.video_tracks[vi].clip_with_id(clip->id)) {
+                for (std::size_t vi = 0; vi < project_->active_sequence().video_tracks.size(); ++vi)
+                    if (project_->active_sequence().video_tracks[vi].clip_with_id(clip->id)) {
                         commit(canvas::core::Track::Kind::Video, vi);
                         return;
                     }
-                for (std::size_t ai = 0; ai < project_->sequence.audio_tracks.size(); ++ai)
-                    if (project_->sequence.audio_tracks[ai].clip_with_id(clip->id)) {
+                for (std::size_t ai = 0; ai < project_->active_sequence().audio_tracks.size(); ++ai)
+                    if (project_->active_sequence().audio_tracks[ai].clip_with_id(clip->id)) {
                         commit(canvas::core::Track::Kind::Audio, ai);
                         return;
                     }
@@ -286,9 +286,9 @@ void MainWindow::connect_timeline() {
     connect(timeline_, &TimelineWidget::new_upper_track_requested, this,
             [this](canvas::core::ClipId clip_id, int64_t tl_in) {
                 if (!project_) return;
-                auto cmd = canvas::core::create_top_track_move(project_->sequence, clip_id, tl_in);
+                auto cmd = canvas::core::create_top_track_move(project_->active_sequence(), clip_id, tl_in);
                 if (cmd) {
-                    undo_.record(std::move(cmd));
+                    active_undo().record(std::move(cmd));
                     qDebug() << "[edit] AUTO-TRACK clip=" << clip_id << "tl_in=" << tl_in;
                     has_unsaved_changes_ = true;
                     refresh_timeline();
@@ -300,9 +300,9 @@ void MainWindow::connect_timeline() {
             [this](canvas::core::Track::Kind kind, int track_index, canvas::core::ClipId id) {
                 if (!project_) return;
                 auto cmd = canvas::core::unlink_clip(
-                    project_->sequence, kind, static_cast<std::size_t>(track_index), id);
+                    project_->active_sequence(), kind, static_cast<std::size_t>(track_index), id);
                 if (cmd) {
-                    undo_.record(std::move(cmd));
+                    active_undo().record(std::move(cmd));
                     qDebug() << "[edit] UNLINK kind="
                                << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                << "track=" << track_index << "clip=" << id;
@@ -316,9 +316,9 @@ void MainWindow::connect_timeline() {
             [this](canvas::core::Track::Kind kind, int track_index, canvas::core::ClipId id) {
                 if (!project_) return;
                 auto cmd = canvas::core::link_clip(
-                    project_->sequence, kind, static_cast<std::size_t>(track_index), id);
+                    project_->active_sequence(), kind, static_cast<std::size_t>(track_index), id);
                 if (cmd) {
-                    undo_.record(std::move(cmd));
+                    active_undo().record(std::move(cmd));
                     qDebug() << "[edit] LINK kind="
                                << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                << "track=" << track_index << "clip=" << id;
@@ -335,9 +335,9 @@ void MainWindow::connect_timeline() {
                            << "type" << static_cast<int>(type) << "dur" << duration;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd = canvas::core::set_clip_transition(
-                        project_->sequence, kind, tidx, clip->id, type, duration);
+                        project_->active_sequence(), kind, tidx, clip->id, type, duration);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] SET kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id
@@ -347,7 +347,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -368,9 +368,9 @@ void MainWindow::connect_timeline() {
                 qWarning() << "transition: clear-requested clip" << clip->id;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd =
-                        canvas::core::clear_clip_transition(project_->sequence, kind, tidx, clip->id);
+                        canvas::core::clear_clip_transition(project_->active_sequence(), kind, tidx, clip->id);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] CLEAR kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id;
@@ -379,7 +379,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -401,9 +401,9 @@ void MainWindow::connect_timeline() {
                            << "type" << static_cast<int>(type) << "dur" << duration;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd = canvas::core::set_clip_transition_in(
-                        project_->sequence, kind, tidx, clip->id, type, duration);
+                        project_->active_sequence(), kind, tidx, clip->id, type, duration);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] SET-IN kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id
@@ -413,7 +413,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -434,9 +434,9 @@ void MainWindow::connect_timeline() {
                 qWarning() << "transition: clear-in-requested clip" << clip->id;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd = canvas::core::clear_clip_transition_in(
-                        project_->sequence, kind, tidx, clip->id);
+                        project_->active_sequence(), kind, tidx, clip->id);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] CLEAR-IN kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id;
@@ -445,7 +445,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -465,7 +465,7 @@ void MainWindow::connect_timeline() {
                 if (!a || !project_) return;
                 qWarning() << "transition: delete-requested a" << a->id << "b"
                            << (b ? static_cast<quint64>(b->id) : 0) << "in_edge" << in_edge;
-                auto& seq = project_->sequence;
+                auto& seq = project_->active_sequence();
                 bool changed = false;
                 const auto clear_edge = [&](const canvas::core::Clip* clip, bool in) {
                     if (!clip) return;
@@ -476,7 +476,7 @@ void MainWindow::connect_timeline() {
                                          seq, canvas::core::Track::Kind::Video, vi, clip->id)
                                    : canvas::core::clear_clip_transition(
                                          seq, canvas::core::Track::Kind::Video, vi, clip->id);
-                            if (cmd) { undo_.record(std::move(cmd)); changed = true; }
+                            if (cmd) { active_undo().record(std::move(cmd)); changed = true; }
                             return;
                         }
                     }
@@ -487,7 +487,7 @@ void MainWindow::connect_timeline() {
                                          seq, canvas::core::Track::Kind::Audio, ai, clip->id)
                                    : canvas::core::clear_clip_transition(
                                          seq, canvas::core::Track::Kind::Audio, ai, clip->id);
-                            if (cmd) { undo_.record(std::move(cmd)); changed = true; }
+                            if (cmd) { active_undo().record(std::move(cmd)); changed = true; }
                             return;
                         }
                     }
@@ -520,9 +520,9 @@ void MainWindow::connect_timeline() {
                     type = canvas::core::TransitionType::CrossDissolve;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd = canvas::core::set_clip_transition(
-                        project_->sequence, kind, tidx, clip->id, type, duration);
+                        project_->active_sequence(), kind, tidx, clip->id, type, duration);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] RESIZE kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id
@@ -532,7 +532,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -557,9 +557,9 @@ void MainWindow::connect_timeline() {
                     type = canvas::core::TransitionType::FadeIn;
                 const auto apply = [&](canvas::core::Track::Kind kind, std::size_t tidx) {
                     auto cmd = canvas::core::set_clip_transition_in(
-                        project_->sequence, kind, tidx, clip->id, type, duration);
+                        project_->active_sequence(), kind, tidx, clip->id, type, duration);
                     if (cmd) {
-                        undo_.record(std::move(cmd));
+                        active_undo().record(std::move(cmd));
                         qWarning() << "[transition] IN-RESIZE kind="
                                    << (kind == canvas::core::Track::Kind::Video ? "V" : "A")
                                    << "track=" << tidx << "clip=" << clip->id
@@ -569,7 +569,7 @@ void MainWindow::connect_timeline() {
                         push_snapshot();
                     }
                 };
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         apply(canvas::core::Track::Kind::Video, vi);
@@ -589,13 +589,13 @@ void MainWindow::connect_timeline() {
                 if (!clip || !project_) return;
                 if (debug_enabled())
                     qDebug() << "timeline: delete_through_edit_requested out clip" << clip->id;
-                const auto& seq = project_->sequence;
+                const auto& seq = project_->active_sequence();
                 for (std::size_t vi = 0; vi < seq.video_tracks.size(); ++vi) {
                     if (seq.video_tracks[vi].clip_with_id(clip->id)) {
                         auto cmd = canvas::core::delete_through_edit(
-                            project_->sequence, canvas::core::Track::Kind::Video, vi, clip->id);
+                            project_->active_sequence(), canvas::core::Track::Kind::Video, vi, clip->id);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] THROUGH-EDIT v_track=" << vi
                                        << "out_clip=" << clip->id;
                             has_unsaved_changes_ = true;
@@ -610,9 +610,9 @@ void MainWindow::connect_timeline() {
                 for (std::size_t ai = 0; ai < seq.audio_tracks.size(); ++ai) {
                     if (seq.audio_tracks[ai].clip_with_id(clip->id)) {
                         auto cmd = canvas::core::delete_through_edit(
-                            project_->sequence, canvas::core::Track::Kind::Audio, ai, clip->id);
+                            project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, clip->id);
                         if (cmd) {
-                            undo_.record(std::move(cmd));
+                            active_undo().record(std::move(cmd));
                             qDebug() << "[edit] THROUGH-EDIT a_track=" << ai
                                        << "out_clip=" << clip->id;
                             has_unsaved_changes_ = true;
@@ -630,8 +630,8 @@ void MainWindow::connect_timeline() {
             [this](canvas::core::Track::Kind kind) {
                 if (!project_) return;
                 auto& tracks = kind == canvas::core::Track::Kind::Video
-                                   ? project_->sequence.video_tracks
-                                   : project_->sequence.audio_tracks;
+                                   ? project_->active_sequence().video_tracks
+                                   : project_->active_sequence().audio_tracks;
                 canvas::core::Track t;
                 t.kind = kind;
                 t.name = (kind == canvas::core::Track::Kind::Video ? "V" : "A") +
@@ -649,8 +649,8 @@ void MainWindow::connect_timeline() {
             [this](canvas::core::Track::Kind kind, int track_index) {
                 if (!project_ || track_index < 0) return;
                 auto& tracks = kind == canvas::core::Track::Kind::Video
-                                   ? project_->sequence.video_tracks
-                                   : project_->sequence.audio_tracks;
+                                   ? project_->active_sequence().video_tracks
+                                   : project_->active_sequence().audio_tracks;
                 const std::size_t idx = static_cast<std::size_t>(track_index);
                 if (idx >= tracks.size()) return;
                 tracks.erase(tracks.begin() + static_cast<std::ptrdiff_t>(idx));
@@ -666,10 +666,10 @@ void MainWindow::connect_timeline() {
         [this](canvas::core::Track::Kind kind, int track_index, bool on,
                auto make_cmd) {
             if (!project_ || track_index < 0) return;
-            auto cmd = make_cmd(project_->sequence, kind,
+            auto cmd = make_cmd(project_->active_sequence(), kind,
                                 static_cast<std::size_t>(track_index), on);
             if (!cmd) return;
-            undo_.record(std::move(cmd));
+            active_undo().record(std::move(cmd));
             has_unsaved_changes_ = true;
             refresh_timeline();
             push_snapshot();
@@ -699,7 +699,7 @@ void MainWindow::connect_timeline() {
 bool MainWindow::find_selected_clip(canvas::core::Track::Kind& out_kind, std::size_t& out_index,
                                     canvas::core::Clip& out_clip) const {
     if (!project_ || selected_clip_ == 0) return false;
-    const canvas::core::Sequence& seq = project_->sequence;
+    const canvas::core::Sequence& seq = project_->active_sequence();
     for (std::size_t i = 0; i < seq.video_tracks.size(); ++i) {
         for (const auto& c : seq.video_tracks[i].clips) {
             if (c.id == selected_clip_) {
@@ -726,7 +726,7 @@ bool MainWindow::find_selected_clip(canvas::core::Track::Kind& out_kind, std::si
 bool MainWindow::find_audio_target(canvas::core::Track::Kind& out_kind, std::size_t& out_index,
                                    canvas::core::Clip& out_clip) const {
     if (!project_ || selected_clip_ == 0) return false;
-    const canvas::core::Sequence& seq = project_->sequence;
+    const canvas::core::Sequence& seq = project_->active_sequence();
     for (std::size_t i = 0; i < seq.audio_tracks.size(); ++i) {
         for (const auto& c : seq.audio_tracks[i].clips) {
             if (c.id == selected_clip_) {
@@ -760,7 +760,7 @@ bool MainWindow::find_audio_target(canvas::core::Track::Kind& out_kind, std::siz
 
 void MainWindow::remove_all_transitions() {
     if (!project_) return;
-    auto& seq = project_->sequence;
+    auto& seq = project_->active_sequence();
 
     const auto snapshot_all =
         [](canvas::core::Sequence& s) -> std::vector<canvas::core::TrackSnapshot> {
@@ -811,7 +811,7 @@ void MainWindow::remove_all_transitions() {
     if (cleared == 0) return;
 
     std::vector<canvas::core::TrackSnapshot> after = snapshot_all(seq);
-    undo_.record(std::make_unique<canvas::core::EditCommand>(
+    active_undo().record(std::make_unique<canvas::core::EditCommand>(
         "Remove All Transitions", std::move(before), std::move(after)));
     has_unsaved_changes_ = true;
     refresh_timeline();
@@ -832,7 +832,7 @@ void MainWindow::update_inspector_audio() {
 
 void MainWindow::apply_inspector_audio() {
     if (!project_ || !inspector_audio_volume_ || !inspector_audio_pan_) return;
-    const auto targets = resolve_audio_targets(project_->sequence, selected_clip_ids_);
+    const auto targets = resolve_audio_targets(project_->active_sequence(), selected_clip_ids_);
     if (targets.empty()) return;
     const float vol = canvas::core::audio_mix::normalize_volume_db(
         static_cast<float>(inspector_audio_volume_->value()));
@@ -840,9 +840,9 @@ void MainWindow::apply_inspector_audio() {
     bool any = false;
     for (const auto& t : targets) {
         if (vol == t.clip.volume_db && pan == t.clip.pan) continue;
-        auto cmd = canvas::core::set_clip_audio(project_->sequence, t.kind, t.track, t.id, vol, pan);
+        auto cmd = canvas::core::set_clip_audio(project_->active_sequence(), t.kind, t.track, t.id, vol, pan);
         if (!cmd) continue;
-        undo_.record(std::move(cmd));
+        active_undo().record(std::move(cmd));
         any = true;
     }
     if (!any) return;
@@ -862,7 +862,7 @@ void MainWindow::apply_inspector_audio() {
 
 void MainWindow::preview_inspector_volume(float vol_db) {
     if (!project_ || !timeline_) return;
-    const auto targets = resolve_audio_targets(project_->sequence, selected_clip_ids_);
+    const auto targets = resolve_audio_targets(project_->active_sequence(), selected_clip_ids_);
     if (targets.empty()) return;
     for (const auto& t : targets) {
         if (std::abs(vol_db - t.clip.volume_db) < 0.05f) {

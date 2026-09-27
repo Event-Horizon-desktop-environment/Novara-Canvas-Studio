@@ -68,6 +68,7 @@ qt_add_executable(canvas
     src/features/project/project_manager_widget.cpp
     src/features/project/project_manager_widget.hpp
     src/features/timeline/TimelineActions.cpp
+    src/features/timeline/TimelineTabs.cpp
     src/features/timeline/audio_targets.cpp
     src/features/timeline/SubtitleActions.cpp
     src/features/timeline/subtitle_dialog.cpp

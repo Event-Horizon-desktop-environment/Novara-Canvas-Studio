@@ -336,8 +336,8 @@ void SequenceController::handle_set_project(std::shared_ptr<const canvas::core::
     if (project_ && project && media_set_identical(*project_, *project)) {
         audio_.update_project(project.get());
         project_ = std::move(project);
-        fps_.store(project_->sequence.fps);
-        total_frames_.store(project_->sequence.duration_frames());
+        fps_.store(project_->active_sequence().fps);
+        total_frames_.store(project_->active_sequence().duration_frames());
         const int64_t cur = current_frame_.load();
         const int64_t anchor = initial_frame >= 0 ? initial_frame : (cur >= 0 ? cur : 0);
         handle_seek(anchor);
@@ -357,8 +357,8 @@ void SequenceController::handle_set_project(std::shared_ptr<const canvas::core::
     }
 
     audio_.set_project(project_.get());
-    fps_.store(project_->sequence.fps);
-    total_frames_.store(project_->sequence.duration_frames());
+    fps_.store(project_->active_sequence().fps);
+    total_frames_.store(project_->active_sequence().duration_frames());
     for (const auto& m : project_->media) handle_add_media(m);
     const int64_t cur = current_frame_.load();
     const int64_t anchor = initial_frame >= 0 ? initial_frame : (cur >= 0 ? cur : 0);
@@ -366,8 +366,8 @@ void SequenceController::handle_set_project(std::shared_ptr<const canvas::core::
         << "[transport] SET-PROJECT anchor=" << anchor
         << " frames=" << total_frames_.load()
         << " fps=" << fps_.load()
-        << " video_tracks=" << project_->sequence.video_tracks.size()
-        << " audio_tracks=" << project_->sequence.audio_tracks.size()
+        << " video_tracks=" << project_->active_sequence().video_tracks.size()
+        << " audio_tracks=" << project_->active_sequence().audio_tracks.size()
         << " media=" << project_->media.size();
     handle_seek(anchor);
 }
@@ -385,8 +385,8 @@ void SequenceController::handle_swap_project(std::shared_ptr<const canvas::core:
     if (!project) return;
     audio_.update_project(project.get());
     project_ = std::move(project);
-    fps_.store(project_->sequence.fps);
-    total_frames_.store(project_->sequence.duration_frames());
+    fps_.store(project_->active_sequence().fps);
+    total_frames_.store(project_->active_sequence().duration_frames());
     const int64_t cur = current_frame_.load();
     if (debug_enabled())
         qDebug() << "playback: GRADE swap (playing=" << playing_.load()

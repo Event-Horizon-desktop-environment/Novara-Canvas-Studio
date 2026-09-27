@@ -50,7 +50,7 @@ Clip make_clip(const MediaId media, const int64_t tl_in, const int64_t tl_out,
 
 void test_write() {
     Project p;
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
 
     Track v1;
     v1.kind = Track::Kind::Video;
@@ -64,8 +64,8 @@ void test_write() {
     a1.kind = Track::Kind::Audio;
     a1.name = "A1";
     a1.clips.push_back(make_clip(3, 0, 150, 0, 150, 3));
-    p.sequence.video_tracks = {v1, v2};
-    p.sequence.audio_tracks = {a1};
+    p.active_sequence().video_tracks = {v1, v2};
+    p.active_sequence().audio_tracks = {a1};
 
     MediaEntry m1;
     m1.id = 1;
@@ -78,7 +78,7 @@ void test_write() {
     m3.path = "/media/bar.wav";
     p.media = {m1, m2, m3};
 
-    const std::string edl = edl::write_cmx3600(p.sequence, "Demo", p.media);
+    const std::string edl = edl::write_cmx3600(p.active_sequence(), "Demo", p.media);
 
     check(has(edl, "TITLE: Demo\n"), "TITLE line");
     check(has(edl, "FCM: NON-DROP FRAME\n\n"), "FCM line");

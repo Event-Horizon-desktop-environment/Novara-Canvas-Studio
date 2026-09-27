@@ -119,7 +119,7 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
 Project make_project(const std::string& src_path) {
     Project p;
     p.name = "ImageExport";
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
     MediaEntry m;
     m.id = 0;
     m.path = src_path;
@@ -131,7 +131,7 @@ Project make_project(const std::string& src_path) {
     Track v;
     v.kind = Track::Kind::Video;
     v.name = "V1";
-    p.sequence.video_tracks.push_back(std::move(v));
+    p.active_sequence().video_tracks.push_back(std::move(v));
     Clip clip;
     clip.media = 0;
     clip.name = "A";
@@ -142,7 +142,7 @@ Project make_project(const std::string& src_path) {
     clip.title.size = 0.16f;
     clip.title.bold = true;
     clip.pos_y = 25.0;
-    place_clip(p.sequence, Track::Kind::Video, 0, clip, Placement::Overwrite);
+    place_clip(p.active_sequence(), Track::Kind::Video, 0, clip, Placement::Overwrite);
     return p;
 }
 

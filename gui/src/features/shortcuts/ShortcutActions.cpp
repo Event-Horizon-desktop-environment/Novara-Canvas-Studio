@@ -84,10 +84,10 @@ bool MainWindow::dispatch_shortcut_event(QKeyEvent* event) {
         timeline_->zoom_fit();
     else if (id == "timeline.collapse_all" || id == "timeline.expand_all") {
         if (project_ != nullptr) {
-            auto cmd = canvas::core::set_all_tracks_collapsed(project_->sequence,
+            auto cmd = canvas::core::set_all_tracks_collapsed(project_->active_sequence(),
                                                               id == "timeline.collapse_all");
             if (cmd != nullptr) {
-                undo_.record(std::move(cmd));
+                active_undo().record(std::move(cmd));
                 has_unsaved_changes_ = true;
                 refresh_timeline();
                 push_snapshot();
@@ -170,12 +170,12 @@ void MainWindow::split_selected_clips_at_playhead() {
             const auto kind = kind_index == 0 ? canvas::core::Track::Kind::Video
                                               : canvas::core::Track::Kind::Audio;
             auto& tracks = kind == canvas::core::Track::Kind::Video
-                               ? project_->sequence.video_tracks
-                               : project_->sequence.audio_tracks;
+                               ? project_->active_sequence().video_tracks
+                               : project_->active_sequence().audio_tracks;
             for (std::size_t track = 0; track < tracks.size() && !split; ++track) {
                 const canvas::core::Clip* clip = tracks[track].clip_with_id(id);
                 if (clip == nullptr || pos <= clip->tl_in || pos >= clip->tl_out) continue;
-                auto cmd = canvas::core::blade_linked_at(project_->sequence, kind, track, pos);
+                auto cmd = canvas::core::blade_linked_at(project_->active_sequence(), kind, track, pos);
                 if (cmd == nullptr) continue;
                 parts.push_back(std::move(cmd));
                 done.push_back(id);
@@ -187,9 +187,9 @@ void MainWindow::split_selected_clips_at_playhead() {
         done.push_back(id);
     }
     if (parts.empty()) return;
-    if (parts.size() == 1) undo_.record(std::move(parts.front()));
+    if (parts.size() == 1) active_undo().record(std::move(parts.front()));
     else
-        undo_.record(std::make_unique<canvas::core::GroupCommand>("Split clips at playhead",
+        active_undo().record(std::make_unique<canvas::core::GroupCommand>("Split clips at playhead",
                                                                   std::move(parts)));
     has_unsaved_changes_ = true;
     refresh_timeline();
@@ -206,16 +206,16 @@ void MainWindow::toggle_clip_link() {
     for (int kind_index = 0; kind_index < 2; ++kind_index) {
         const auto kind =
             kind_index == 0 ? canvas::core::Track::Kind::Video : canvas::core::Track::Kind::Audio;
-        auto& tracks = kind == canvas::core::Track::Kind::Video ? project_->sequence.video_tracks
-                                                                : project_->sequence.audio_tracks;
+        auto& tracks = kind == canvas::core::Track::Kind::Video ? project_->active_sequence().video_tracks
+                                                                : project_->active_sequence().audio_tracks;
         for (std::size_t track = 0; track < tracks.size(); ++track) {
             const canvas::core::Clip* clip = tracks[track].clip_with_id(id);
             if (clip == nullptr) continue;
             auto cmd = clip->is_linked()
-                           ? canvas::core::unlink_clip(project_->sequence, kind, track, id)
-                           : canvas::core::link_clip(project_->sequence, kind, track, id);
+                           ? canvas::core::unlink_clip(project_->active_sequence(), kind, track, id)
+                           : canvas::core::link_clip(project_->active_sequence(), kind, track, id);
             if (cmd == nullptr) return;
-            undo_.record(std::move(cmd));
+            active_undo().record(std::move(cmd));
             has_unsaved_changes_ = true;
             refresh_timeline();
             push_snapshot();

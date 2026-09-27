@@ -1,14 +1,12 @@
+#include "canvas/core/export/deliver_preset.hpp"
 #include "canvas/core/export/exporter.hpp"
-#include "canvas/core/export/loudness.hpp"
 #include "canvas/core/project/project.hpp"
 #include "canvas/core/timeline/edit_ops.hpp"
 
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <numbers>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -24,32 +22,21 @@ namespace {
 
 int failures = 0;
 
-void check(const bool cond, const char* what) {
+void check(bool cond, const char* what) {
     std::printf("%s  %s\n", cond ? "PASS" : "FAIL", what);
     if (!cond) ++failures;
 }
 
-void check_near(const float got, const float want, const float tol, const char* what) {
-    const bool ok = std::fabs(got - want) <= tol;
-    std::printf("%s  %s (got %.2f want %.2f +-%.2f)\n", ok ? "PASS" : "FAIL", what,
-                static_cast<double>(got), static_cast<double>(want), static_cast<double>(tol));
-    if (!ok) ++failures;
-}
+const char* kOutDir = "/tmp/canvas_audio_codecs";
 
-const char* kOutDir = "/tmp/canvas_loudness_normalize";
-constexpr double kSrcLufs = -23.0103;
-constexpr float kTargetLufs = -20.0f;
-
-bool make_source(const std::string& path, const int w, const int h, const int fps,
-                 const int frames, const int sample_rate) {
+bool make_source(const std::string& path) {
+    const int w = 128, h = 96, fps = 30, frames = 30, sample_rate = 48000;
     const AVCodec* vcodec = avcodec_find_encoder_by_name("ffv1");
     const AVCodec* acodec = avcodec_find_encoder_by_name("pcm_s16le");
     if (!vcodec || !acodec) return false;
-
     AVFormatContext* oc = nullptr;
     avformat_alloc_output_context2(&oc, nullptr, "matroska", path.c_str());
     if (!oc) return false;
-
     AVStream* vst = avformat_new_stream(oc, nullptr);
     AVCodecContext* vctx = vst ? avcodec_alloc_context3(vcodec) : nullptr;
     if (!vctx) {
@@ -61,15 +48,13 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
     vctx->time_base = AVRational{1, fps};
     vctx->framerate = AVRational{fps, 1};
     vctx->pix_fmt = AV_PIX_FMT_YUV420P;
-    vctx->gop_size = 12;
-    vctx->max_b_frames = 0;
-    if (avcodec_open2(vctx, vcodec, nullptr) < 0 || avcodec_parameters_from_context(vst->codecpar, vctx) < 0) {
+    if (avcodec_open2(vctx, vcodec, nullptr) < 0 ||
+        avcodec_parameters_from_context(vst->codecpar, vctx) < 0) {
         avcodec_free_context(&vctx);
         avformat_free_context(oc);
         return false;
     }
     vst->time_base = vctx->time_base;
-
     AVStream* ast = avformat_new_stream(oc, nullptr);
     AVCodecContext* actx = ast ? avcodec_alloc_context3(acodec) : nullptr;
     if (!actx) {
@@ -89,7 +74,6 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
         return false;
     }
     ast->time_base = actx->time_base;
-
     if (!(oc->oformat->flags & AVFMT_NOFILE)) avio_open(&oc->pb, path.c_str(), AVIO_FLAG_WRITE);
     if (avformat_write_header(oc, nullptr) < 0) {
         avcodec_free_context(&actx);
@@ -97,7 +81,6 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
         avformat_free_context(oc);
         return false;
     }
-
     AVFrame* vf = av_frame_alloc();
     vf->format = AV_PIX_FMT_YUV420P;
     vf->width = w;
@@ -109,17 +92,13 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
     af->ch_layout = AV_CHANNEL_LAYOUT_STEREO;
     af->nb_samples = 1024;
     av_frame_get_buffer(af, 0);
-
-    const double tone_hz = 1000.0;
-    const double amplitude = 0.1;
-    int64_t sample_cursor = 0;
-    const int64_t total_samples = (int64_t)((double)frames / (double)fps * (double)sample_rate);
-
+    const int64_t total_samples = (int64_t)frames * sample_rate / fps;
+    int64_t cursor = 0;
     for (int n = 0; n < frames; ++n) {
         av_frame_make_writable(vf);
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x)
-                vf->data[0][y * vf->linesize[0] + x] = static_cast<uint8_t>((x + y + n * 8) & 0xff);
+                vf->data[0][y * vf->linesize[0] + x] = (uint8_t)((x + y + n) & 0xff);
         for (int y = 0; y < h / 2; ++y)
             for (int x = 0; x < w / 2; ++x) {
                 vf->data[1][y * vf->linesize[1] + x] = 128;
@@ -135,23 +114,24 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
             av_packet_unref(pkt);
         }
         av_packet_free(&pkt);
-
-        while (sample_cursor < total_samples) {
+        while (cursor < total_samples) {
             av_frame_make_writable(af);
-            const int want = af->nb_samples;
+            const int want = (int)std::min<int64_t>(1024, total_samples - cursor);
+            auto* d = reinterpret_cast<int16_t*>(af->data[0]);
             for (int i = 0; i < want; ++i) {
-                const int64_t s = sample_cursor + i;
-                const double t = (double)s / (double)sample_rate;
-                const float v = (float)(amplitude * std::sin(2.0 * std::numbers::pi * tone_hz * t));
-                auto* d = reinterpret_cast<int16_t*>(af->data[0]);
-                d[i * 2] = (int16_t)(v * 32767.0f);
-                d[i * 2 + 1] = d[i * 2];
+                const double t = (double)(cursor + i) / (double)sample_rate;
+                const float v = (float)(0.25 * std::sin(2.0 * std::numbers::pi * 440.0 * t));
+                const int16_t s = (int16_t)(v * 32767.0f);
+                d[i * 2] = s;
+                d[i * 2 + 1] = s;
             }
-            af->pts = sample_cursor;
-            const int64_t take = (total_samples - sample_cursor) < want
-                                     ? (total_samples - sample_cursor)
-                                     : want;
-            sample_cursor += take;
+            for (int i = want; i < 1024; ++i) {
+                d[i * 2] = 0;
+                d[i * 2 + 1] = 0;
+            }
+            af->nb_samples = 1024;
+            af->pts = cursor;
+            cursor += want;
             avcodec_send_frame(actx, af);
             AVPacket* ap = av_packet_alloc();
             while (avcodec_receive_packet(actx, ap) == 0) {
@@ -161,22 +141,8 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
                 av_packet_unref(ap);
             }
             av_packet_free(&ap);
-            if (sample_cursor >= total_samples) break;
-        }
-        if (sample_cursor >= total_samples && n + 1 < frames) {
-            avcodec_send_frame(vctx, nullptr);
-            AVPacket* p2 = av_packet_alloc();
-            while (avcodec_receive_packet(vctx, p2) == 0) {
-                av_packet_rescale_ts(p2, vctx->time_base, vst->time_base);
-                p2->stream_index = vst->index;
-                av_interleaved_write_frame(oc, p2);
-                av_packet_unref(p2);
-            }
-            av_packet_free(&p2);
-            break;
         }
     }
-
     av_frame_free(&vf);
     av_frame_free(&af);
     av_write_trailer(oc);
@@ -187,46 +153,42 @@ bool make_source(const std::string& path, const int w, const int h, const int fp
     return true;
 }
 
-Project make_project(const std::string& src_path) {
+Project make_project(const std::string& src) {
     Project p;
-    p.name = "LoudnessNormalize";
+    p.name = "AudioCodecs";
     p.active_sequence().fps = 30.0;
     MediaEntry m;
     m.id = 0;
-    m.path = src_path;
+    m.path = src;
     m.fps = 30.0;
     m.width = 128;
     m.height = 96;
-    m.total_frames = 90;
+    m.total_frames = 30;
     p.media.push_back(m);
-
     Track v;
     v.kind = Track::Kind::Video;
     v.name = "V1";
     p.active_sequence().video_tracks.push_back(std::move(v));
     Clip vc;
     vc.media = 0;
-    vc.name = "V";
     vc.tl_in = 0;
     vc.src_in = 0;
-    vc.src_out = 90;
+    vc.src_out = 30;
     place_clip(p.active_sequence(), Track::Kind::Video, 0, vc, Placement::Overwrite);
-
     Track a;
     a.kind = Track::Kind::Audio;
     a.name = "A1";
     p.active_sequence().audio_tracks.push_back(std::move(a));
     Clip ac;
     ac.media = 0;
-    ac.name = "A";
     ac.tl_in = 0;
     ac.src_in = 0;
-    ac.src_out = 90;
+    ac.src_out = 30;
     place_clip(p.active_sequence(), Track::Kind::Audio, 0, ac, Placement::Overwrite);
     return p;
 }
 
-bool read_audio(const std::string& path, std::vector<float>* out, int* channels, int* rate) {
+bool decode_peak(const std::string& path, float* peak) {
     AVFormatContext* fmt = nullptr;
     if (avformat_open_input(&fmt, path.c_str(), nullptr, nullptr) < 0) return false;
     if (avformat_find_stream_info(fmt, nullptr) < 0) {
@@ -251,69 +213,90 @@ bool read_audio(const std::string& path, std::vector<float>* out, int* channels,
         avformat_close_input(&fmt);
         return false;
     }
-
-    *channels = ctx->ch_layout.nb_channels;
-    *rate = ctx->sample_rate;
-    out->clear();
-
+    float pk = 0.0f;
     AVFrame* f = av_frame_alloc();
     AVPacket* pkt = av_packet_alloc();
-    const auto drain = [&](AVCodecContext* c) {
-        while (avcodec_receive_frame(c, f) == 0) {
+    const auto drain = [&]() {
+        while (avcodec_receive_frame(ctx, f) == 0) {
             const int ch = f->ch_layout.nb_channels;
             const int n = f->nb_samples;
-            if (ch <= 0 || n <= 0) continue;
-            if (av_sample_fmt_is_planar(static_cast<AVSampleFormat>(f->format))) {
-                for (int i = 0; i < n; ++i)
-                    for (int c2 = 0; c2 < ch; ++c2)
-                        out->push_back(reinterpret_cast<float*>(f->extended_data[c2])[i]);
-            } else {
-                const int bps = av_get_bytes_per_sample(static_cast<AVSampleFormat>(f->format));
-                if (f->format == AV_SAMPLE_FMT_FLT)
-                    for (int i = 0; i < n * ch; ++i)
-                        out->push_back(reinterpret_cast<float*>(f->data[0])[i]);
-                else if (f->format == AV_SAMPLE_FMT_S16 && bps == 2)
-                    for (int i = 0; i < n * ch; ++i)
-                        out->push_back(
-                            (float)reinterpret_cast<int16_t*>(f->data[0])[i] / 32768.0f);
+            const auto fmtid = static_cast<AVSampleFormat>(f->format);
+            if (fmtid == AV_SAMPLE_FMT_FLT || fmtid == AV_SAMPLE_FMT_FLTP) {
+                if (av_sample_fmt_is_planar(fmtid)) {
+                    for (int c = 0; c < ch; ++c) {
+                        const auto* d = reinterpret_cast<float*>(f->extended_data[c]);
+                        for (int i = 0; i < n; ++i) {
+                            const float v = std::fabs(d[i]);
+                            if (v > pk) pk = v;
+                        }
+                    }
+                } else {
+                    const auto* d = reinterpret_cast<float*>(f->data[0]);
+                    for (int i = 0; i < n * ch; ++i) {
+                        const float v = std::fabs(d[i]);
+                        if (v > pk) pk = v;
+                    }
+                }
+            } else if (fmtid == AV_SAMPLE_FMT_S16 || fmtid == AV_SAMPLE_FMT_S16P) {
+                if (av_sample_fmt_is_planar(fmtid)) {
+                    for (int c = 0; c < ch; ++c) {
+                        const auto* d = reinterpret_cast<int16_t*>(f->extended_data[c]);
+                        for (int i = 0; i < n; ++i) {
+                            const float v = std::fabs((float)d[i] / 32768.0f);
+                            if (v > pk) pk = v;
+                        }
+                    }
+                } else {
+                    const auto* d = reinterpret_cast<int16_t*>(f->data[0]);
+                    for (int i = 0; i < n * ch; ++i) {
+                        const float v = std::fabs((float)d[i] / 32768.0f);
+                        if (v > pk) pk = v;
+                    }
+                }
+            } else if (fmtid == AV_SAMPLE_FMT_S32 || fmtid == AV_SAMPLE_FMT_S32P) {
+                if (av_sample_fmt_is_planar(fmtid)) {
+                    for (int c = 0; c < ch; ++c) {
+                        const auto* d = reinterpret_cast<int32_t*>(f->extended_data[c]);
+                        for (int i = 0; i < n; ++i) {
+                            const float v = std::fabs((float)((double)d[i] / 2147483648.0));
+                            if (v > pk) pk = v;
+                        }
+                    }
+                } else {
+                    const auto* d = reinterpret_cast<int32_t*>(f->data[0]);
+                    for (int i = 0; i < n * ch; ++i) {
+                        const float v = std::fabs((float)((double)d[i] / 2147483648.0));
+                        if (v > pk) pk = v;
+                    }
+                }
             }
             av_frame_unref(f);
         }
     };
     while (av_read_frame(fmt, pkt) >= 0) {
-        if (pkt->stream_index == idx) {
-            if (avcodec_send_packet(ctx, pkt) == 0) drain(ctx);
-        }
+        if (pkt->stream_index == idx && avcodec_send_packet(ctx, pkt) == 0) drain();
         av_packet_unref(pkt);
     }
     avcodec_send_packet(ctx, nullptr);
-    drain(ctx);
-
+    drain();
     av_packet_free(&pkt);
     av_frame_free(&f);
     avcodec_free_context(&ctx);
     avformat_close_input(&fmt);
-    return !out->empty();
+    *peak = pk;
+    return pk > 0.0f;
 }
 
-float measure(const std::string& path) {
-    std::vector<float> pcm;
-    int ch = 0;
-    int rate = 0;
-    if (!read_audio(path, &pcm, &ch, &rate)) return loudness::kSilenceLufs;
-    return loudness::integrated_loudness_lufs_interleaved(pcm, ch, rate);
-}
-
-ExportSettings base_settings(const std::string& out) {
+ExportSettings base_settings(const std::string& out, const std::string& audio_codec) {
     ExportSettings s;
     s.output_path = out;
     s.format = "matroska";
     s.video_codec = "ffv1";
-    s.audio_codec = "aac";
+    s.audio_codec = audio_codec;
     s.width = 128;
     s.height = 96;
     s.fps = 30.0;
-    s.duration_frames = 90;
+    s.duration_frames = 30;
     s.audio_sample_rate = 48000;
     s.audio_channels = 2;
     s.audio_bitrate_kbps = 192;
@@ -321,46 +304,62 @@ ExportSettings base_settings(const std::string& out) {
     s.crf = -1;
     s.preset.clear();
     s.extra.clear();
-    s.threads = 2;
     return s;
 }
 
-}
+}  // namespace
 
 int main() {
     std::filesystem::remove_all(kOutDir);
     std::filesystem::create_directories(kOutDir);
-
-    const std::string src = std::string(kOutDir) + "/source.mkv";
-    if (!make_source(src, 128, 96, 30, 90, 48000)) {
+    const std::string src = std::string(kOutDir) + "/src.mkv";
+    if (!make_source(src)) {
         std::printf("SKIP  no ffv1/pcm_s16le encoders to synthesize source\n");
         return 2;
     }
     const Project p = make_project(src);
 
-    std::string error;
-    ExportSettings plain = base_settings(std::string(kOutDir) + "/plain.mkv");
-    const bool ok_plain = export_project(p, plain, nullptr, &error);
-    check(ok_plain, "un-normalized export succeeds");
-    if (!ok_plain) std::printf("      error: %s\n", error.c_str());
-    const float plain_lu = measure(plain.output_path);
-    check_near(plain_lu, (float)kSrcLufs, 1.0f, "raw export measures the source loudness");
+    check(audio_encoder_name("PCM") == "pcm_s16le", "map PCM -> pcm_s16le");
+    check(audio_encoder_name("MP3") == "libmp3lame", "map MP3 -> libmp3lame");
+    check(audio_encoder_name("AAC") == "aac", "map AAC -> aac");
+    check(audio_encoder_name("FLAC") == "flac", "map FLAC -> flac");
+    check(audio_encoder_name("ALAC") == "alac", "map ALAC -> alac");
+    check(audio_encoder_name("AC-3") == "ac3", "map AC-3 -> ac3");
+    check(audio_encoder_name("E-AC-3") == "eac3", "map E-AC-3 -> eac3");
+    check(audio_encoder_name("Opus") == "opus", "map Opus -> opus");
+    check(audio_encoder_name("Vorbis") == "vorbis", "map Vorbis -> vorbis");
 
-    ExportSettings norm = base_settings(std::string(kOutDir) + "/norm.mkv");
-    norm.normalize_loudness = true;
-    norm.normalize_target_lufs = kTargetLufs;
-    const bool ok_norm = export_project(p, norm, nullptr, &error);
-    check(ok_norm, "normalized export succeeds");
-    if (!ok_norm) std::printf("      error: %s\n", error.c_str());
-    const float norm_lu = measure(norm.output_path);
-    check_near(norm_lu, kTargetLufs, 1.0f, "normalized export lands on the target");
+    DeliverSettings ds;
+    ds.audio.codec = "PCM";
+    ds.audio.export_audio = true;
+    ds.audio.sample_rate = 48000;
+    ds.audio.channels = 2;
+    ds.video.custom_width = 128;
+    ds.video.custom_height = 96;
+    ds.video.custom_fps = 30.0;
+    check(to_export_settings(ds).audio_codec == "pcm_s16le",
+          "to_export_settings carries pcm_s16le");
+    ds.audio.codec = "AC-3";
+    check(to_export_settings(ds).audio_codec == "ac3", "to_export_settings carries ac3");
 
-    if (ok_plain && ok_norm)
-        check_near(norm_lu - plain_lu, kTargetLufs - (float)kSrcLufs, 0.7f,
-                   "normalization moved the mix by the expected gain");
+    const std::vector<std::string> codecs{"pcm", "pcm_s16le", "mp3", "aac", "flac", "alac",
+                                          "ac3", "eac3", "opus", "vorbis"};
+    for (const std::string& ac : codecs) {
+        ExportSettings es = base_settings(std::string(kOutDir) + "/out_" + ac + ".mkv", ac);
+        std::string err;
+        const bool ok = export_project(p, es, nullptr, &err);
+        check(ok, ("export audio_codec=" + ac).c_str());
+        if (!ok) {
+            std::printf("      error: %s\n", err.c_str());
+            continue;
+        }
+        float peak = 0.0f;
+        check(decode_peak(es.output_path, &peak) && peak > 0.05f,
+              ("tone survives " + ac).c_str());
+    }
 
     if (failures == 0) {
-        std::printf("ALL LOUDNESS NORMALIZE TESTS PASSED\n");
+        std::printf("ALL AUDIO CODEC TESTS PASSED\n");
         return 0;
     }
     std::fprintf(stderr, "%d FAILURES\n", failures);

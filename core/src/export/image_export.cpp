@@ -141,7 +141,7 @@ struct PngEncoder {
 void derive_size(const Project& project, int* w, int* h) {
     int mw = 0;
     int mh = 0;
-    for (const auto& track : project.sequence.video_tracks) {
+    for (const auto& track : project.active_sequence().video_tracks) {
         for (const auto& clip : track.clips) {
             if (!clip.enabled) continue;
             const MediaEntry* m = project.media_by_id(clip.media);
@@ -184,7 +184,7 @@ bool export_image_frames(const Project& project, const ExportSettings& s, Export
 
     const int64_t start = s.start_frame > 0 ? s.start_frame : 0;
     const int64_t count = still ? 1 : std::max<int64_t>(1, s.duration_frames);
-    const double seq_fps = project.sequence.fps;
+    const double seq_fps = project.active_sequence().fps;
     const double export_fps = s.fps > 0.0 ? s.fps : (seq_fps > 0.0 ? seq_fps : 30.0);
     const double tl_per_frame =
         (seq_fps > 0.0 && export_fps > 0.0) ? seq_fps / export_fps : 1.0;

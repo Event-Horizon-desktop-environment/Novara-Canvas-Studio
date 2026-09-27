@@ -16,7 +16,7 @@ namespace {
 
 using json = nlohmann::json;
 
-constexpr int kProjectVersion = 4;
+constexpr int kProjectVersion = 5;
 
 json clip_to_json(const Clip& c) {
     json j{{"id", c.id},
@@ -256,6 +256,63 @@ json tracks_to_json(const std::vector<Track>& tracks) {
     json arr = json::array();
     for (const auto& t : tracks) arr.push_back(track_to_json(t));
     return arr;
+}
+
+json bookmarks_to_json(const std::vector<Bookmark>& bookmarks) {
+    json arr = json::array();
+    for (const auto& b : bookmarks)
+        arr.push_back(json{{"id", b.id},
+                           {"frame", b.frame},
+                           {"tl_out", b.tl_out},
+                           {"label", b.label}});
+    return arr;
+}
+
+json timeline_to_json(const Sequence& seq) {
+    json tj{{"name", seq.name},
+            {"fps", seq.fps},
+            {"next_clip_id", seq.next_clip_id},
+            {"video_tracks", tracks_to_json(seq.video_tracks)},
+            {"audio_tracks", tracks_to_json(seq.audio_tracks)},
+            {"bookmarks", bookmarks_to_json(seq.bookmarks)},
+            {"next_bookmark_id", seq.next_bookmark_id}};
+    return tj;
+}
+
+void tracks_from_json(Sequence& seq, const json& tj, uint64_t& max_id) {
+    for (const auto& vj : tj.value("video_tracks", json::array())) {
+        seq.video_tracks.push_back(track_from_json(vj, Track::Kind::Video));
+        for (const auto& c : seq.video_tracks.back().clips) max_id = std::max(max_id, c.id);
+    }
+    for (const auto& aj : tj.value("audio_tracks", json::array())) {
+        seq.audio_tracks.push_back(track_from_json(aj, Track::Kind::Audio));
+        for (const auto& c : seq.audio_tracks.back().clips) max_id = std::max(max_id, c.id);
+    }
+}
+
+void bookmarks_from_json(Sequence& seq, const json& tj) {
+    for (const auto& bj : tj.value("bookmarks", json::array())) {
+        Bookmark b;
+        b.id = bj.value("id", uint64_t{0});
+        b.frame = bj.value("frame", int64_t{0});
+        b.tl_out = bj.value("tl_out", int64_t{0});
+        b.label = bj.value("label", std::string());
+        if (b.frame < 0) b.frame = 0;
+        if (b.tl_out < b.frame) b.tl_out = 0;
+        if (b.id >= seq.next_bookmark_id) seq.next_bookmark_id = b.id + 1;
+        seq.bookmarks.push_back(std::move(b));
+    }
+}
+
+Sequence sequence_from_json(const json& tj, uint64_t& max_id) {
+    Sequence seq;
+    seq.name = tj.value("name", std::string("Timeline 1"));
+    seq.fps = tj.value("fps", 30.0);
+    seq.next_clip_id = tj.value("next_clip_id", ClipId{1});
+    seq.next_bookmark_id = tj.value("next_bookmark_id", uint64_t{1});
+    tracks_from_json(seq, tj, max_id);
+    bookmarks_from_json(seq, tj);
+    return seq;
 }
 
 json deliver_video_to_json(const DeliverVideoSettings& v) {
@@ -534,6 +591,17 @@ const MediaEntry* Project::media_by_id(const MediaId id) const noexcept {
     return nullptr;
 }
 
+Sequence& Project::active_sequence() {
+    if (timelines.empty()) timelines.emplace_back();
+    if (active_timeline >= timelines.size()) active_timeline = 0;
+    return timelines[active_timeline];
+}
+
+const Sequence& Project::active_sequence() const {
+    const std::size_t idx = timelines.empty() ? 0 : std::min(active_timeline, timelines.size() - 1);
+    return timelines[idx];
+}
+
 bool save_project(const Project& project, const std::string& path, std::string* error) {
     try {
         json media = json::array();
@@ -547,24 +615,17 @@ bool save_project(const Project& project, const std::string& path, std::string* 
                                  {"bin", m.bin},
                                  {"has_audio", m.has_audio}});
 
+        json timelines = json::array();
+        for (const auto& tl : project.timelines) timelines.push_back(timeline_to_json(tl));
+
         json doc{
             {"canvas_project", kProjectVersion},
             {"name", project.name},
             {"media_root", project.media_root},
-            {"fps", project.sequence.fps},
-            {"next_clip_id", project.sequence.next_clip_id},
+            {"timelines", std::move(timelines)},
+            {"active_timeline", project.active_timeline},
             {"media", media},
-            {"bins", project.bins},
-            {"video_tracks", tracks_to_json(project.sequence.video_tracks)},
-            {"audio_tracks", tracks_to_json(project.sequence.audio_tracks)}};
-        json bookmarks = json::array();
-        for (const auto& b : project.sequence.bookmarks)
-            bookmarks.push_back(json{{"id", b.id},
-                                     {"frame", b.frame},
-                                     {"tl_out", b.tl_out},
-                                     {"label", b.label}});
-        doc["bookmarks"] = std::move(bookmarks);
-        doc["next_bookmark_id"] = project.sequence.next_bookmark_id;
+            {"bins", project.bins}};
         doc["deliver_settings"] = deliver_to_json(project.deliver_settings);
         json render_jobs = json::array();
         for (const auto& j : project.render_jobs) render_jobs.push_back(job_to_json(j));
@@ -588,12 +649,11 @@ bool save_project(const Project& project, const std::string& path, std::string* 
                     if (c.has_transition()) ++n;
             return n;
         };
-        CANVAS_LOG("project: SAVED '%s' version=%d clips_with_transitions=%zu (video=%zu audio=%zu) render_jobs=%zu bytes=%zu write_ms=%.0f",
-               path.c_str(), kProjectVersion,
-               count_transitions(project.sequence.video_tracks) +
-                   count_transitions(project.sequence.audio_tracks),
-               count_transitions(project.sequence.video_tracks),
-               count_transitions(project.sequence.audio_tracks),
+        std::size_t saved_transitions = 0;
+        for (const auto& tl : project.timelines)
+            saved_transitions += count_transitions(tl.video_tracks) + count_transitions(tl.audio_tracks);
+        CANVAS_LOG("project: SAVED '%s' version=%d timelines=%zu clips_with_transitions=%zu render_jobs=%zu bytes=%zu write_ms=%.0f",
+               path.c_str(), kProjectVersion, project.timelines.size(), saved_transitions,
                project.render_jobs.size(),
                out.tellp() > 0 ? static_cast<std::size_t>(out.tellp()) : 0,
                write_ms);
@@ -625,9 +685,6 @@ bool load_project(Project& out, const std::string& path, std::string* error) {
         Project p;
         p.name = doc.value("name", "Untitled Project");
         p.media_root = doc.value("media_root", std::string());
-        p.sequence.fps = doc.value("fps", 30.0);
-        p.sequence.next_clip_id = doc.value("next_clip_id", ClipId{1});
-        p.sequence.next_bookmark_id = doc.value("next_bookmark_id", uint64_t{1});
 
         uint64_t max_id = 0;
         for (const auto& mj : doc.value("media", json::array())) {
@@ -645,26 +702,29 @@ bool load_project(Project& out, const std::string& path, std::string* error) {
 
         for (const auto& b : doc.value("bins", json::array())) p.bins.push_back(b.get<std::string>());
 
-        for (const auto& tj : doc.value("video_tracks", json::array())) {
-            p.sequence.video_tracks.push_back(track_from_json(tj, Track::Kind::Video));
-            for (const auto& c : p.sequence.video_tracks.back().clips) max_id = std::max(max_id, c.id);
+        if (doc.contains("timelines")) {
+            for (const auto& tj : doc.value("timelines", json::array()))
+                p.timelines.push_back(sequence_from_json(tj, max_id));
+            p.active_timeline = doc.value("active_timeline", std::size_t{0});
+        } else {
+            Sequence seq;
+            seq.name = "Timeline 1";
+            seq.fps = doc.value("fps", 30.0);
+            seq.next_clip_id = doc.value("next_clip_id", ClipId{1});
+            seq.next_bookmark_id = doc.value("next_bookmark_id", uint64_t{1});
+            tracks_from_json(seq, doc, max_id);
+            bookmarks_from_json(seq, doc);
+            p.timelines.push_back(std::move(seq));
+            p.active_timeline = 0;
         }
-        for (const auto& tj : doc.value("audio_tracks", json::array())) {
-            p.sequence.audio_tracks.push_back(track_from_json(tj, Track::Kind::Audio));
-            for (const auto& c : p.sequence.audio_tracks.back().clips) max_id = std::max(max_id, c.id);
-        }
-        p.sequence.next_clip_id = std::max(p.sequence.next_clip_id, max_id + 1);
-
-        for (const auto& bj : doc.value("bookmarks", json::array())) {
-            Bookmark b;
-            b.id = bj.value("id", uint64_t{0});
-            b.frame = bj.value("frame", int64_t{0});
-            b.tl_out = bj.value("tl_out", int64_t{0});
-            b.label = bj.value("label", std::string());
-            if (b.frame < 0) b.frame = 0;
-            if (b.tl_out < b.frame) b.tl_out = 0;
-            if (b.id >= p.sequence.next_bookmark_id) p.sequence.next_bookmark_id = b.id + 1;
-            p.sequence.bookmarks.push_back(std::move(b));
+        if (p.timelines.empty()) p.timelines.emplace_back();
+        if (p.active_timeline >= p.timelines.size()) p.active_timeline = 0;
+        uint64_t max_bookmark = 0;
+        for (const auto& tl : p.timelines)
+            for (const auto& b : tl.bookmarks) max_bookmark = std::max(max_bookmark, b.id);
+        for (auto& tl : p.timelines) {
+            tl.next_clip_id = std::max(tl.next_clip_id, max_id + 1);
+            tl.next_bookmark_id = std::max(tl.next_bookmark_id, max_bookmark + 1);
         }
 
         if (doc.contains("deliver_settings")) {
@@ -685,12 +745,11 @@ bool load_project(Project& out, const std::string& path, std::string* error) {
         };
         const double total_ms = std::chrono::duration<double, std::milli>(
                                     std::chrono::steady_clock::now() - t_total0).count();
-        CANVAS_LOG("project: LOADED '%s' version=%d clips_with_transitions=%zu (video=%zu audio=%zu) render_jobs=%zu bytes=%zu total_ms=%.0f",
-               path.c_str(), version,
-               count_transitions(p.sequence.video_tracks) +
-                   count_transitions(p.sequence.audio_tracks),
-               count_transitions(p.sequence.video_tracks),
-               count_transitions(p.sequence.audio_tracks),
+        std::size_t loaded_transitions = 0;
+        for (const auto& tl : p.timelines)
+            loaded_transitions += count_transitions(tl.video_tracks) + count_transitions(tl.audio_tracks);
+        CANVAS_LOG("project: LOADED '%s' version=%d timelines=%zu clips_with_transitions=%zu render_jobs=%zu bytes=%zu total_ms=%.0f",
+               path.c_str(), version, p.timelines.size(), loaded_transitions,
                p.render_jobs.size(),
                raw.size(),
                total_ms);

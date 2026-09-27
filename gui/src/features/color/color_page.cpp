@@ -595,7 +595,7 @@ void build_color_page(MainWindow& mw) {
     mw.addDockWidget(Qt::RightDockWidgetArea, mw.color_lightbox_dock_);
     mw.color_lightbox_dock_->hide();
 
-    if (mw.project_) mw.color_mini_strip_->set_sequence(&mw.project_->sequence);
+    if (mw.project_) mw.color_mini_strip_->set_sequence(&mw.project_->active_sequence());
     QObject::connect(&mw.controller_, &SequenceController::position_changed, &mw,
             [&mw](int64_t frame) {
                 if (mw.color_mini_strip_) mw.color_mini_strip_->set_playhead(frame);
@@ -607,7 +607,7 @@ void build_color_page(MainWindow& mw) {
                 qWarning().nospace()
                     << "[grade] activate clip=" << id << " frame=" << frame;
                 if (!mw.project_) return;
-                const canvas::core::Clip* clip = find_clip_by_id(mw.project_->sequence, id);
+                const canvas::core::Clip* clip = find_clip_by_id(mw.project_->active_sequence(), id);
                 if (!clip) return;
                 const GradeLoadState state = grade_load_state(clip->grade);
                 wheels->set_state(state.wheels);
@@ -643,7 +643,7 @@ void build_color_page(MainWindow& mw) {
             CANVAS_COLOR_LOG("[target] resolve NO-PROJECT");
             return false;
         }
-        const auto& seq = mw.project_->sequence;
+        const auto& seq = mw.project_->active_sequence();
         const int64_t frame = mw.controller_.current_frame();
         for (std::size_t i = seq.video_tracks.size(); i-- > 0;) {
             const canvas::core::Clip* c = seq.video_tracks[i].clip_at(frame);
@@ -691,16 +691,16 @@ void build_color_page(MainWindow& mw) {
             static_cast<long long>(mw.controller_.current_frame()),
             clip.grade.num_nodes(), clip.grade.edges().size(), clip.has_grade() ? 1 : 0,
             grade_state_digest(wheels->state(), curves->params()).toStdString().c_str());
-        auto cmd = canvas::core::set_clip_grade(mw.project_->sequence, kind,
+        auto cmd = canvas::core::set_clip_grade(mw.project_->active_sequence(), kind,
                 index, clip.id, g);
         if (!cmd) return;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         qWarning().nospace()
             << "[grade] commit seq=" << g.change_seq
             << " t=" << canvas::core::log::epoch_ms()
             << " kind=" << static_cast<int>(kind)
             << " track=" << index << " clip=" << clip.id
-            << " undo=" << mw.undo_.count()
+            << " undo=" << mw.active_undo().count()
             << " " << graph_census(g)
             << " " << grade_state_digest(wheels->state(), curves->params());
         CANVAS_COLOR_LOG(
@@ -763,10 +763,10 @@ void build_color_page(MainWindow& mw) {
         canvas::core::grade_graph::GradeGraph g =
             make_grade_graph(wheels->state(), curves->params());
         g.change_seq = ++grade_seq;
-        auto cmd = canvas::core::set_clip_grade(mw.project_->sequence, kind,
+        auto cmd = canvas::core::set_clip_grade(mw.project_->active_sequence(), kind,
                 index, clip.id, g);
         if (!cmd) return;
-        cmd->redo(mw.project_->sequence);
+        cmd->redo(mw.project_->active_sequence());
         mw.refresh_timeline();
         mw.push_grade_snapshot();
         qWarning().nospace()
@@ -825,16 +825,16 @@ void build_color_page(MainWindow& mw) {
             static_cast<unsigned long long>(clip.id),
             static_cast<long long>(mw.controller_.current_frame()),
             clip.grade.num_nodes(), clip.grade.edges().size(), clip.has_grade() ? 1 : 0);
-        auto cmd = canvas::core::set_clip_grade(mw.project_->sequence, kind, index,
+        auto cmd = canvas::core::set_clip_grade(mw.project_->active_sequence(), kind, index,
                                                 clip.id, g);
         if (!cmd) return;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         qWarning().nospace()
             << "[grade] reset-all commit seq=" << g.change_seq
             << " t=" << canvas::core::log::epoch_ms()
             << " kind=" << static_cast<int>(kind)
             << " track=" << index << " clip=" << clip.id
-            << " undo=" << mw.undo_.count() << " grade=EMPTY (ungraded)";
+            << " undo=" << mw.active_undo().count() << " grade=EMPTY (ungraded)";
         CANVAS_COLOR_LOG(
             "[grade] reset-all seq=%llu kind=%d clip=%llu frame=%lld grade=EMPTY",
             static_cast<unsigned long long>(g.change_seq), static_cast<int>(kind),
@@ -903,7 +903,7 @@ void enter_color_page(MainWindow& mw) {
     mw.ui->timelineDock->hide();
     if (mw.color_dock_) mw.color_dock_->show();
     if (mw.color_mini_strip_) {
-        if (mw.project_) mw.color_mini_strip_->set_sequence(&mw.project_->sequence);
+        if (mw.project_) mw.color_mini_strip_->set_sequence(&mw.project_->active_sequence());
         mw.color_mini_strip_->set_playhead(mw.controller_.current_frame());
     }
     if (!already_active && !mw.controller_.is_playing())

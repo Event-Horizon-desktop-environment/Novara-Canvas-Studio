@@ -21,7 +21,7 @@ namespace {
 
 Project make_crossfade_project() {
     Project p;
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
     MediaEntry m;
     m.id = 0;
     m.path = "/tmp/canvas_bake_test.mkv";
@@ -49,7 +49,7 @@ Project make_crossfade_project() {
     b.src_in = 3448;
     b.src_out = 48380;
     t.clips = {a, b};
-    p.sequence.video_tracks = {t};
+    p.active_sequence().video_tracks = {t};
     return p;
 }
 
@@ -79,7 +79,7 @@ void test_lead_cap_blocked() {
 
 void test_window_longer_than_max() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips[0].transition_out_duration = 20;
+    p.active_sequence().video_tracks[0].clips[0].transition_out_duration = 20;
     report(!win_at(p, 1500).has_value(),
            "window longer than kTransitionBakeMaxFrames -> no candidate");
 }
@@ -91,34 +91,34 @@ void test_distinct_media_skip() {
     m2.path = "/tmp/canvas_bake_test_other.mkv";
     m2.fps = 60.0;
     p.media.push_back(m2);
-    p.sequence.video_tracks[0].clips[1].media = 1;
+    p.active_sequence().video_tracks[0].clips[1].media = 1;
     report(!win_at(p, 1588).has_value(), "distinct-media cut -> no candidate");
 }
 
 void test_missing_incoming_clip() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips.pop_back();
+    p.active_sequence().video_tracks[0].clips.pop_back();
     report(!win_at(p, 1588).has_value(),
            "no incoming clip at the cut -> fade stays on the live path");
 }
 
 void test_fade_only_no_out() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips[0].transition_out = TransitionType::None;
-    p.sequence.video_tracks[0].clips[0].transition_out_duration = 0;
+    p.active_sequence().video_tracks[0].clips[0].transition_out = TransitionType::None;
+    p.active_sequence().video_tracks[0].clips[0].transition_out_duration = 0;
     report(!win_at(p, 1588).has_value(), "no OUT transition -> no candidate");
 }
 
 void test_audio_only_transition_skip() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips[0].transition_out = TransitionType::AudioFadeConstantGain;
+    p.active_sequence().video_tracks[0].clips[0].transition_out = TransitionType::AudioFadeConstantGain;
     report(!win_at(p, 1588).has_value(),
            "audio-only OUT transition -> no candidate (video window unchanged)");
 }
 
 void test_window_overflowing_clip() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips[0].transition_out_duration = 2000;
+    p.active_sequence().video_tracks[0].clips[0].transition_out_duration = 2000;
     report(!win_at(p, 0).has_value(),
            "window overflowing A's own extent -> no candidate");
 }
@@ -134,13 +134,13 @@ void test_covered_at_window_head() {
     c.src_in = 3200;
     c.src_out = 3300;
     top.clips.push_back(c);
-    p.sequence.video_tracks.push_back(top);
+    p.active_sequence().video_tracks.push_back(top);
     report(!win_at(p, 1588).has_value(), "higher track at window head -> no candidate");
 }
 
 void test_disabled_candidate() {
     Project p = make_crossfade_project();
-    p.sequence.video_tracks[0].clips[0].enabled = false;
+    p.active_sequence().video_tracks[0].clips[0].enabled = false;
     report(!win_at(p, 1588).has_value(), "disabled candidate clip -> no candidate");
 }
 

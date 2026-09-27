@@ -55,7 +55,7 @@ void MainWindow::clear_in_out() {
 
 void MainWindow::update_mark_status() {
     if (!status_) return;
-    const double seq_fps = project_ && project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    const double seq_fps = project_ && project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     const double src_fps =
         src_preview_.has_media() && src_preview_.fps() > 0.0 ? src_preview_.fps() : seq_fps;
     const auto dash = QStringLiteral("—");
@@ -75,7 +75,7 @@ void MainWindow::update_mark_status() {
 
 void MainWindow::create_range_from_marks() {
     if (!project_) return;
-    const int64_t tl_dur = project_->sequence.duration_frames();
+    const int64_t tl_dur = project_->active_sequence().duration_frames();
     int64_t in = tl_mark_in_;
     int64_t out = tl_mark_out_;
     if (in >= 0 && in > out) std::swap(in, out);
@@ -92,7 +92,7 @@ void MainWindow::create_range_from_marks() {
     }
 
     const std::string fallback =
-        "Range " + std::to_string(project_->sequence.bookmarks.size() + 1);
+        "Range " + std::to_string(project_->active_sequence().bookmarks.size() + 1);
     bool ok = false;
     const QString entered = QInputDialog::getText(
         this, tr("Create Range"), tr("Name:"), QLineEdit::Normal,
@@ -101,7 +101,7 @@ void MainWindow::create_range_from_marks() {
     const std::string label =
         entered.trimmed().isEmpty() ? fallback : entered.trimmed().toStdString();
 
-    const uint64_t id = project_->sequence.add_range(in, out, label);
+    const uint64_t id = project_->active_sequence().add_range(in, out, label);
     if (id == 0) return;
     has_unsaved_changes_ = true;
     refresh_timeline();
@@ -109,11 +109,11 @@ void MainWindow::create_range_from_marks() {
     if (status_)
         status_->showMessage(tr("Range %1 created: %2 → %3")
                                  .arg(QString::fromStdString(label))
-                                 .arg(timecode(in, project_->sequence.fps > 0.0
-                                                       ? project_->sequence.fps
+                                 .arg(timecode(in, project_->active_sequence().fps > 0.0
+                                                       ? project_->active_sequence().fps
                                                        : 30.0))
-                                 .arg(timecode(out, project_->sequence.fps > 0.0
-                                                        ? project_->sequence.fps
+                                 .arg(timecode(out, project_->active_sequence().fps > 0.0
+                                                        ? project_->active_sequence().fps
                                                         : 30.0)));
 }
 
@@ -146,7 +146,7 @@ bool MainWindow::three_point_place(const canvas::core::Placement mode) {
         return false;
     }
 
-    const double seq_fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    const double seq_fps = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     const double media_fps =
         found->fps > 0.0
             ? found->fps

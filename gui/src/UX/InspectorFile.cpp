@@ -401,10 +401,10 @@ void build_inspector_file(MainWindow& mw, QVBoxLayout* file_layout) {
             comments == clip.comments)
             return;
 
-        auto cmd = canvas::core::set_clip_metadata(mw.project_->sequence, kind, index, clip.id,
+        auto cmd = canvas::core::set_clip_metadata(mw.project_->active_sequence(), kind, index, clip.id,
                                                    tag, color, comments, name);
         if (!cmd) return;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -440,7 +440,7 @@ QObject::connect(sw, &QToolButton::clicked, &mw,
     QObject::connect(fc.ed_timecode, &QLineEdit::editingFinished, &mw, [&mw, &fc]() {
         if (fc.updating) return;
         if (!mw.project_) return;
-        const double fps = mw.project_->sequence.fps;
+        const double fps = mw.project_->active_sequence().fps;
         const QString& text = fc.ed_timecode->text().trimmed();
         const QRegularExpression re(QStringLiteral(
             R"(^\s*(\d+):(\d\d):(\d\d):(\d\d)\s*$)"));
@@ -457,10 +457,10 @@ QObject::connect(sw, &QToolButton::clicked, &mw,
         canvas::core::Clip clip;
         if (!mw.find_selected_clip(kind, index, clip)) return;
         if (frame == clip.tl_in) return;
-        auto cmd = canvas::core::move_clip(mw.project_->sequence, kind, index, clip.id, kind,
+        auto cmd = canvas::core::move_clip(mw.project_->active_sequence(), kind, index, clip.id, kind,
                                            index, frame);
         if (!cmd) return;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -520,7 +520,7 @@ void update_inspector_file(MainWindow& mw) {
     }
 
     const auto* media = mw.project_->media_by_id(clip.media);
-    const double fps = mw.project_->sequence.fps;
+    const double fps = mw.project_->active_sequence().fps;
 
     fc->preview_name->setText(short_media_name(clip, media));
     fc->r_media->setText(media ? QString::fromStdString(media->path).section(QLatin1Char('/'), -1)
@@ -541,7 +541,7 @@ void update_inspector_file(MainWindow& mw) {
     const bool has_audio = kind == Track::Kind::Audio ||
                            (clip.linked_id != 0 &&
                             [&mw](canvas::core::ClipId id) {
-                                for (const auto& t : mw.project_->sequence.audio_tracks)
+                                for (const auto& t : mw.project_->active_sequence().audio_tracks)
                                     if (t.clip_with_id(id)) return true;
                                 return false;
                             }(clip.linked_id));

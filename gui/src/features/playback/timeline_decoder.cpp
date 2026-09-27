@@ -593,7 +593,7 @@ double media_fps_of(const canvas::core::Project& project, const canvas::core::Cl
 int64_t seq_to_src_frame(const canvas::core::Project& project, const canvas::core::Clip& clip,
                          int64_t seq_frame) {
     const double mf = media_fps_of(project, clip);
-    const double sf = project.sequence.fps;
+    const double sf = project.active_sequence().fps;
     if (mf <= 0.0 || sf <= 0.0) {
         return clip.src_in +
                canvas::core::cliprate::scaled_frame_offset(clip, seq_frame - clip.tl_in);
@@ -682,7 +682,7 @@ canvas::core::Nv12FramePtr host_nv12_from_hw(const AVFrame* hw, std::int64_t src
 const canvas::core::Clip* TimelineDecoder::top_video_clip_at(const canvas::core::Project& project,
                                                          std::int64_t seq_frame) const {
     if (seq_frame < 0) return nullptr;
-    const canvas::core::Sequence& seq = project.sequence;
+    const canvas::core::Sequence& seq = project.active_sequence();
     for (std::size_t i = seq.video_tracks.size(); i-- > 0;) {
         const auto& track = seq.video_tracks[i];
         if (track.locked) continue;
@@ -694,7 +694,7 @@ const canvas::core::Clip* TimelineDecoder::top_video_clip_at(const canvas::core:
 const canvas::core::Clip* TimelineDecoder::media_clip_beneath(
     const canvas::core::Project& project, std::int64_t seq_frame) const {
     if (seq_frame < 0) return nullptr;
-    const canvas::core::Sequence& seq = project.sequence;
+    const canvas::core::Sequence& seq = project.active_sequence();
     for (std::size_t i = seq.video_tracks.size(); i-- > 0;) {
         const auto& track = seq.video_tracks[i];
         if (track.locked) continue;
@@ -715,7 +715,7 @@ TimelineDecoder::next_transition_bake_candidate(const canvas::core::Project& pro
 bool TimelineDecoder::transition_bake_candidate(const canvas::core::Project& project,
                                                 std::int64_t seq_frame,
                                                 TransitionBakeJob* out) const {
-    const canvas::core::Sequence& seq = project.sequence;
+    const canvas::core::Sequence& seq = project.active_sequence();
     const canvas::core::Clip* a_win = nullptr;
     const canvas::core::Clip* b_win = nullptr;
     for (const auto& track : seq.video_tracks) {
@@ -760,7 +760,7 @@ bool TimelineDecoder::transition_bake_candidate(const canvas::core::Project& pro
 
     out->a_entry = *ae;
     out->b_entry = *be;
-    out->seq_fps = project.sequence.fps;
+    out->seq_fps = project.active_sequence().fps;
     out->a = *a_win;
     out->b = *b_win;
     out->win_start = a_win->tl_out - a_win->transition_out_duration;
@@ -989,7 +989,7 @@ void TimelineDecoder::attach_title_transition(canvas::core::RenderFrame& out,
             static_cast<long long>(seq_frame), static_cast<unsigned long long>(a.id),
             static_cast<int>(a.transition_out), static_cast<long long>(tr_out_start),
             static_cast<long long>(a.tl_out));
-    const canvas::core::Sequence& seq = project.sequence;
+    const canvas::core::Sequence& seq = project.active_sequence();
     const canvas::core::Clip* b = nullptr;
     for (const auto& track : seq.video_tracks) {
         if (track.locked) continue;
@@ -1002,7 +1002,7 @@ void TimelineDecoder::attach_title_transition(canvas::core::RenderFrame& out,
         if (b) break;
     }
     if (b && b != &a) {
-        const double bsf2 = project.sequence.fps;
+        const double bsf2 = project.active_sequence().fps;
         const double bmf2 = media_fps_of(project, *b);
         const double bratio = (bmf2 > 0.0 && bsf2 > 0.0) ? bsf2 / bmf2 : 1.0;
         int64_t b_seq = b->tl_in + static_cast<int64_t>(std::llround(
@@ -1110,7 +1110,7 @@ canvas::core::RenderFramePtr TimelineDecoder::frame(const canvas::core::Project&
                                  ? grade_lut_for(*a)
                                  : canvas::core::grade_graph::GradeLutPtr{};
                 if (out->b_nv12) {
-                    const canvas::core::Sequence& seq = project.sequence;
+                    const canvas::core::Sequence& seq = project.active_sequence();
                     const canvas::core::Clip* b = nullptr;
                     for (const auto& track : seq.video_tracks) {
                         if (track.locked) continue;
@@ -1143,7 +1143,7 @@ canvas::core::RenderFramePtr TimelineDecoder::frame(const canvas::core::Project&
                 return out;
             }
 
-            const canvas::core::Sequence& seq = project.sequence;
+            const canvas::core::Sequence& seq = project.active_sequence();
             const canvas::core::Clip* b = nullptr;
             for (const auto& track : seq.video_tracks) {
                 if (track.locked) continue;
@@ -1153,7 +1153,7 @@ canvas::core::RenderFramePtr TimelineDecoder::frame(const canvas::core::Project&
                 if (b) break;
             }
             if (b && b != a) {
-                const double bsf = project.sequence.fps;
+                const double bsf = project.active_sequence().fps;
                 const double bmf = media_fps_of(project, *b);
                 const double bratio = (bmf > 0.0 && bsf > 0.0) ? bsf / bmf : 1.0;
                 int64_t b_seq = b->tl_in + static_cast<int64_t>(std::llround(
@@ -1234,7 +1234,7 @@ canvas::core::RenderFramePtr TimelineDecoder::frame(const canvas::core::Project&
                    static_cast<long long>(seq_frame), static_cast<unsigned long long>(a->id),
                    static_cast<int>(a->transition_out),
                    static_cast<long long>(tr_out_start), static_cast<long long>(a->tl_out));
-        const canvas::core::Sequence& seq = project.sequence;
+        const canvas::core::Sequence& seq = project.active_sequence();
         const canvas::core::Clip* b = nullptr;
         for (const auto& track : seq.video_tracks) {
             if (track.locked) continue;
@@ -1244,7 +1244,7 @@ canvas::core::RenderFramePtr TimelineDecoder::frame(const canvas::core::Project&
             if (b) break;
         }
         if (b && b != a) {
-            const double bsf2 = project.sequence.fps;
+            const double bsf2 = project.active_sequence().fps;
             const double bmf2 = media_fps_of(project, *b);
             const double bratio = (bmf2 > 0.0 && bsf2 > 0.0) ? bsf2 / bmf2 : 1.0;
             int64_t b_seq = b->tl_in + static_cast<int64_t>(std::llround(
@@ -1288,7 +1288,7 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
             "[scrub:TRACE] seq=%lld project=%d clip=%d maxdim=%d total=%lld",
             static_cast<long long>(seq_frame), 1,
             top_video_clip_at(project, seq_frame) ? 1 : 0, max_dim,
-            static_cast<long long>(project.sequence.duration_frames()));
+            static_cast<long long>(project.active_sequence().duration_frames()));
 
     if (a) apply_clip_visual(*out, *a);
     if (!a) return out;
@@ -1345,7 +1345,7 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
                 return out;
             }
             if (in_out_trans) {
-                const canvas::core::Sequence& seq = project.sequence;
+                const canvas::core::Sequence& seq = project.active_sequence();
                 const canvas::core::Clip* b = nullptr;
                 for (const auto& track : seq.video_tracks) {
                     if (track.locked) continue;
@@ -1355,7 +1355,7 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
                     if (b) break;
                 }
                 if (b && b != a) {
-                    const double bsf = project.sequence.fps;
+                    const double bsf = project.active_sequence().fps;
                     const double bmf = media_fps_of(project, *b);
                     const double bratio = (bmf > 0.0 && bsf > 0.0) ? bsf / bmf : 1.0;
                     int64_t b_seq = b->tl_in + static_cast<int64_t>(std::llround(
@@ -1437,7 +1437,7 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
             ::canvas::core::log::log_warning("transition: preview active seq_frame %lld clip %llu type %d max_dim %d",
                    static_cast<long long>(seq_frame), static_cast<unsigned long long>(a->id),
                    static_cast<int>(a->transition_out), max_dim);
-        const canvas::core::Sequence& seq = project.sequence;
+        const canvas::core::Sequence& seq = project.active_sequence();
         const canvas::core::Clip* b = nullptr;
         for (const auto& track : seq.video_tracks) {
             if (track.locked) continue;
@@ -1447,7 +1447,7 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
             if (b) break;
         }
         if (b && b != a) {
-            const double bsf2 = project.sequence.fps;
+            const double bsf2 = project.active_sequence().fps;
             const double bmf2 = media_fps_of(project, *b);
             const double bratio = (bmf2 > 0.0 && bsf2 > 0.0) ? bsf2 / bmf2 : 1.0;
             int64_t b_seq = b->tl_in + static_cast<int64_t>(std::llround(
@@ -1488,8 +1488,8 @@ canvas::core::RenderFramePtr TimelineDecoder::preview(const canvas::core::Projec
 
 double TimelineDecoder::media_rate_at(const canvas::core::Project& project, std::int64_t seq_frame,
                                       double fallback_fps) const {
-    if (seq_frame < 0 || seq_frame >= project.sequence.duration_frames()) return fallback_fps;
-    const canvas::core::Sequence& seq = project.sequence;
+    if (seq_frame < 0 || seq_frame >= project.active_sequence().duration_frames()) return fallback_fps;
+    const canvas::core::Sequence& seq = project.active_sequence();
     for (std::size_t i = seq.video_tracks.size(); i-- > 0;) {
         const auto& track = seq.video_tracks[i];
         if (track.locked) continue;

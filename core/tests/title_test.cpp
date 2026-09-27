@@ -592,11 +592,11 @@ int main() {
     if (!g_skip) {
         Project tp;
         tp.name = "Smoke";
-        tp.sequence.fps = 30.0;
+        tp.active_sequence().fps = 30.0;
         Track v1;
         v1.kind = Track::Kind::Video;
         v1.name = "V1";
-        tp.sequence.video_tracks.push_back(std::move(v1));
+        tp.active_sequence().video_tracks.push_back(std::move(v1));
 
         Clip tc;
         tc.media = -1;
@@ -608,7 +608,7 @@ int main() {
         tc.title.text = "Title";
         tc.title.size = title::kSizeDefault;
         std::unique_ptr<ICommand> tcmd =
-            place_clip(tp.sequence, Track::Kind::Video, 0, tc, Placement::Overwrite);
+            place_clip(tp.active_sequence(), Track::Kind::Video, 0, tc, Placement::Overwrite);
         report(tcmd != nullptr, "glue: title-only clip places");
 
         const int W = 160, H = 90;
@@ -653,7 +653,7 @@ int main() {
         }
         rs.end();
 
-        tp.sequence.video_tracks[0].clips[0].enabled = false;
+        tp.active_sequence().video_tracks[0].clips[0].enabled = false;
         VideoFramePtr black = render_video_frame(tp, 0, W, H, nullptr);
         report(black != nullptr, "glue: disabled title renders");
         if (black) {
@@ -665,22 +665,22 @@ int main() {
     }
 
     Project p;
-    p.sequence.fps = 30.0;
-    p.sequence.video_tracks.emplace_back();
-    p.sequence.video_tracks[0].kind = Track::Kind::Video;
+    p.active_sequence().fps = 30.0;
+    p.active_sequence().video_tracks.emplace_back();
+    p.active_sequence().video_tracks[0].kind = Track::Kind::Video;
     Clip base;
     base.media = 0;
     base.tl_in = 0;
     base.src_in = 0;
     base.src_out = 30;
     std::unique_ptr<ICommand> cmd =
-        place_clip(p.sequence, Track::Kind::Video, 0, base, Placement::Overwrite);
+        place_clip(p.active_sequence(), Track::Kind::Video, 0, base, Placement::Overwrite);
     report(cmd != nullptr, "edit-op: place succeeds");
     UndoStack undo;
     undo.record(std::move(cmd));
-    const ClipId cid = p.sequence.video_tracks[0].clips[0].id;
+    const ClipId cid = p.active_sequence().video_tracks[0].clips[0].id;
 
-    report(!p.sequence.video_tracks[0].clips[0].has_title(),
+    report(!p.active_sequence().video_tracks[0].clips[0].has_title(),
            "edit-op: fresh clip has no title");
 
     Clip::Title want;
@@ -690,49 +690,49 @@ int main() {
     want.g = 0.1f;
     want.b = 0.2f;
     want.a = 0.9f;
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, cid, want);
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, cid, want);
     report(cmd != nullptr, "edit-op: set returns command");
     undo.record(std::move(cmd));
-    const Clip& after = p.sequence.video_tracks[0].clips[0];
+    const Clip& after = p.active_sequence().video_tracks[0].clips[0];
     report(after.has_title() && after.title.text == want.text && after.title.size == want.size &&
                after.title.r == want.r && after.title.g == want.g && after.title.b == want.b &&
                after.title.a == want.a,
            "edit-op: fields land on the clip");
 
     const ClipId bogus = 9999;
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, bogus, want);
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, bogus, want);
     report(cmd == nullptr, "edit-op: unknown clip -> nullptr");
 
     Clip::Title huge = want;
     huge.size = 9.9f;
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, cid, huge);
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, cid, huge);
     undo.record(std::move(cmd));
-    report(p.sequence.video_tracks[0].clips[0].title.size == title::kSizeMax,
+    report(p.active_sequence().video_tracks[0].clips[0].title.size == title::kSizeMax,
            "edit-op: size clamps to max");
 
-    report(undo.undo(p.sequence), "edit-op: undo step");
-    report(p.sequence.video_tracks[0].clips[0].title.text == want.text,
+    report(undo.undo(p.active_sequence()), "edit-op: undo step");
+    report(p.active_sequence().video_tracks[0].clips[0].title.text == want.text,
            "edit-op: undo restores previous title");
-    report(undo.undo(p.sequence), "edit-op: undo to empty");
-    report(!p.sequence.video_tracks[0].clips[0].has_title(),
+    report(undo.undo(p.active_sequence()), "edit-op: undo to empty");
+    report(!p.active_sequence().video_tracks[0].clips[0].has_title(),
            "edit-op: undo clears title entirely");
-    report(undo.redo(p.sequence) && p.sequence.video_tracks[0].clips[0].has_title(),
+    report(undo.redo(p.active_sequence()) && p.active_sequence().video_tracks[0].clips[0].has_title(),
            "edit-op: redo restores title");
 
     Clip::Title empty_title;
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, cid, empty_title);
-    report(cmd != nullptr && !p.sequence.video_tracks[0].clips[0].has_title(),
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, cid, empty_title);
+    report(cmd != nullptr && !p.active_sequence().video_tracks[0].clips[0].has_title(),
            "edit-op: empty title clears has_title");
 
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, cid, want);
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, cid, want);
     undo.record(std::move(cmd));
-    cmd = set_clip_title(p.sequence, Track::Kind::Video, 0, cid, want);
+    cmd = set_clip_title(p.active_sequence(), Track::Kind::Video, 0, cid, want);
     report(cmd != nullptr, "edit-op: identical re-set returns a command");
     undo.record(std::move(cmd));
-    report(undo.undo(p.sequence) && p.sequence.video_tracks[0].clips[0].has_title() &&
-               p.sequence.video_tracks[0].clips[0].title.text == want.text,
+    report(undo.undo(p.active_sequence()) && p.active_sequence().video_tracks[0].clips[0].has_title() &&
+               p.active_sequence().video_tracks[0].clips[0].title.text == want.text,
            "edit-op: undo of no-op leaves the title in place");
-    report(undo.redo(p.sequence) && p.sequence.video_tracks[0].clips[0].has_title(),
+    report(undo.redo(p.active_sequence()) && p.active_sequence().video_tracks[0].clips[0].has_title(),
            "edit-op: redo of no-op keeps the title");
 
     if (g_skip) {

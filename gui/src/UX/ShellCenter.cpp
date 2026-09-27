@@ -553,8 +553,8 @@ void build_center_workspace(MainWindow& mw) {
     viewer_layout->addWidget(viewer_inner, 1);
 
     mw.timeline_ = new TimelineWidget(&mw);
-    mw.timeline_->set_sequence(&mw.project_->sequence);
-    mw.timeline_->set_fps(mw.project_->sequence.fps);
+    mw.timeline_->set_sequence(&mw.project_->active_sequence());
+    mw.timeline_->set_fps(mw.project_->active_sequence().fps);
     mw.timeline_->set_thumbnail_service(&mw.thumbnails_);
     apply_view_options(mw);
     mw.thumbnails_.set_cache_dir(
@@ -579,7 +579,61 @@ void build_center_workspace(MainWindow& mw) {
     timeline_frame_layout->addWidget(contextual_bar);
     timeline_frame_layout->addWidget(transport);
     timeline_frame_layout->addWidget(top_scrub);
+
+    auto* tab_row = new QWidget(timeline_frame);
+    auto* tab_row_layout = new QHBoxLayout(tab_row);
+    tab_row_layout->setContentsMargins(0, 0, 0, 0);
+    tab_row_layout->setSpacing(4);
+    mw.timeline_tabs_ = new QTabBar(tab_row);
+    mw.timeline_tabs_->setMovable(true);
+    mw.timeline_tabs_->setExpanding(false);
+    mw.timeline_tabs_->setDrawBase(false);
+    mw.timeline_tabs_->setContextMenuPolicy(Qt::CustomContextMenu);
+    mw.timeline_tabs_->setToolTip(MainWindow::tr("Timelines — click to switch, drag to reorder, double-click to rename, right-click for more actions"));
+    tab_row_layout->addWidget(mw.timeline_tabs_, 1);
+    auto* add_tab_btn = new QToolButton(tab_row);
+    add_tab_btn->setText(QStringLiteral("+"));
+    add_tab_btn->setAutoRaise(true);
+    apply_theme_style(add_tab_btn, &flat_tool_style);
+    add_tab_btn->setToolTip(MainWindow::tr("New timeline"));
+    tab_row_layout->addWidget(add_tab_btn);
+    timeline_frame_layout->addWidget(tab_row);
     timeline_frame_layout->addWidget(mw.timeline_, 1);
+
+    QObject::connect(mw.timeline_tabs_, &QTabBar::currentChanged, &mw,
+            [&mw](int index) {
+                if (index >= 0) mw.switch_timeline(static_cast<std::size_t>(index));
+            });
+    QObject::connect(mw.timeline_tabs_, &QTabBar::tabMoved, &mw,
+            [&mw](int from, int to) {
+                mw.move_timeline(static_cast<std::size_t>(from), static_cast<std::size_t>(to));
+            });
+    QObject::connect(mw.timeline_tabs_, &QTabBar::tabBarDoubleClicked, &mw,
+            [&mw](int index) {
+                if (index >= 0) mw.rename_timeline(static_cast<std::size_t>(index));
+            });
+    QObject::connect(mw.timeline_tabs_, &QTabBar::customContextMenuRequested, &mw,
+            [&mw](const QPoint& pos) {
+                const int index = mw.timeline_tabs_->tabAt(pos);
+                QMenu menu(&mw);
+                QAction* add = menu.addAction(MainWindow::tr("New timeline"));
+                QObject::connect(add, &QAction::triggered, &mw, [&mw] { mw.new_timeline(); });
+                if (index >= 0) {
+                    const std::size_t i = static_cast<std::size_t>(index);
+                    QAction* rename = menu.addAction(MainWindow::tr("Rename"));
+                    QObject::connect(rename, &QAction::triggered, &mw,
+                            [&mw, i] { mw.rename_timeline(i); });
+                    QAction* duplicate = menu.addAction(MainWindow::tr("Duplicate"));
+                    QObject::connect(duplicate, &QAction::triggered, &mw,
+                            [&mw, i] { mw.duplicate_timeline(i); });
+                    QAction* close = menu.addAction(MainWindow::tr("Close"));
+                    QObject::connect(close, &QAction::triggered, &mw,
+                            [&mw, i] { mw.close_timeline(i); });
+                }
+                menu.exec(mw.timeline_tabs_->mapToGlobal(pos));
+            });
+    QObject::connect(add_tab_btn, &QToolButton::clicked, &mw, [&mw] { mw.new_timeline(); });
+    mw.rebuild_timeline_tabs();
 
     auto* timeline_dock = mw.ui->timelineDock;
     timeline_dock->setObjectName(QStringLiteral("timelineDock"));

@@ -69,7 +69,7 @@ void MainWindow::open_subtitle_dialog() {
         return;
     }
 
-    const auto targets = resolve_audio_targets(project_->sequence, selected_clip_ids_);
+    const auto targets = resolve_audio_targets(project_->active_sequence(), selected_clip_ids_);
     if (targets.empty()) {
         QMessageBox::information(
             this, tr("Generate Subtitles From Audio"),
@@ -104,7 +104,7 @@ void MainWindow::open_subtitle_dialog() {
     subtitle_tl_in_ = std::max<int64_t>(0, audio_clip.tl_in);
     subtitle_tl_out_ = std::max<int64_t>(subtitle_tl_in_, audio_clip.tl_out);
     subtitle_src_in_ = std::max<int64_t>(0, audio_clip.src_in);
-    subtitle_seq_fps_ = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    subtitle_seq_fps_ = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     subtitle_media_fps_ = entry.fps > 0.0 ? entry.fps : subtitle_seq_fps_;
 
     auto* dlg = new SubtitleDialog(this);
@@ -221,7 +221,7 @@ void MainWindow::finish_subtitle_transcription(Report report) {
         return;
     }
 
-    auto& seq = project_->sequence;
+    auto& seq = project_->active_sequence();
     const auto caps = canvas::core::captions::shape_captions(
         report.cues, subtitle_opts_, subtitle_seq_fps_);
     if (caps.empty()) {
@@ -284,7 +284,7 @@ void MainWindow::finish_subtitle_transcription(Report report) {
                                             std::move(clip),
                                             canvas::core::Placement::Overwrite, 0.0);
         if (!cmd) continue;
-        undo_.record(std::move(cmd));
+        active_undo().record(std::move(cmd));
         ++placed;
     }
 

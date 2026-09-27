@@ -367,9 +367,9 @@ void RenderQueue::worker() {
             es.duration_frames = local.total_frames;
             es.start_frame = local.start_frame;
             if (project && !scope_is_image(local.settings.render_scope))
-                chapters::apply(es, project->sequence,
+                chapters::apply(es, project->active_sequence(),
                                 local.settings.video.chapters_from_markers);
-            const double seq_fps = project ? project->sequence.fps : 0.0;
+            const double seq_fps = project ? project->active_sequence().fps : 0.0;
             const double export_fps = (es.fps > 0.0) ? es.fps
                                         : (seq_fps > 0.0 ? seq_fps : 30.0);
             const int64_t total = (seq_fps > 0.0)

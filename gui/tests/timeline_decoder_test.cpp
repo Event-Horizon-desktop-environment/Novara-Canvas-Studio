@@ -110,8 +110,8 @@ int main() {
 
     Project project;
     project.name = "decoder-test";
-    project.sequence.fps = kFps;
-    project.sequence.next_clip_id = 1;
+    project.active_sequence().fps = kFps;
+    project.active_sequence().next_clip_id = 1;
 
     MediaEntry media;
     media.id = 1;
@@ -125,7 +125,7 @@ int main() {
     Track track;
     track.kind = Track::Kind::Video;
     Clip clip;
-    clip.id = project.sequence.next_clip_id++;
+    clip.id = project.active_sequence().next_clip_id++;
     clip.media = media.id;
     clip.tl_in = 0;
     clip.tl_out = kFrames;
@@ -133,7 +133,7 @@ int main() {
     clip.src_out = kFrames;
     clip.name = "T";
     track.clips.push_back(clip);
-    project.sequence.video_tracks.push_back(std::move(track));
+    project.active_sequence().video_tracks.push_back(std::move(track));
 
     canvas::gui::TimelineDecoder decoder;
     decoder.add_media(media);
@@ -176,7 +176,7 @@ int main() {
         const int gout = g.add_node(canvas::core::grade_graph::NodeKind::kOutput);
         g.add_rgb_edge(lgg, gout);
         graded.grade = g;
-        pgraded.sequence.video_tracks[0].clips[0] = graded;
+        pgraded.active_sequence().video_tracks[0].clips[0] = graded;
 
         auto gf = decoder.frame(pgraded, 5);
         report(gf && (gf->nv12 || (gf->a && gf->a->width == kWidth &&
@@ -222,8 +222,8 @@ int main() {
     if (make_source(path60, kWidth, kHeight, 60, 48)) {
         Project p60;
         p60.name = "decoder-test-60";
-        p60.sequence.fps = 30;
-        p60.sequence.next_clip_id = 1;
+        p60.active_sequence().fps = 30;
+        p60.active_sequence().next_clip_id = 1;
         MediaEntry m60;
         m60.id = 2;
         m60.path = path60;
@@ -235,14 +235,14 @@ int main() {
         Track t60;
         t60.kind = Track::Kind::Video;
         Clip c60;
-        c60.id = p60.sequence.next_clip_id++;
+        c60.id = p60.active_sequence().next_clip_id++;
         c60.media = m60.id;
         c60.tl_in = 0;
         c60.tl_out = 24;
         c60.src_in = 0;
         c60.src_out = 48;
         t60.clips.push_back(c60);
-        p60.sequence.video_tracks.push_back(std::move(t60));
+        p60.active_sequence().video_tracks.push_back(std::move(t60));
         decoder.add_media(m60);
 
         auto head = decoder.decode(p60, c60, 0);
@@ -257,8 +257,8 @@ int main() {
 
     {
         Project pt = project;
-        pt.sequence.video_tracks[0].clips[0].title.text = "OVERLAY";
-        pt.sequence.video_tracks[0].clips[0].title.size = canvas::core::title::kSizeDefault;
+        pt.active_sequence().video_tracks[0].clips[0].title.text = "OVERLAY";
+        pt.active_sequence().video_tracks[0].clips[0].title.size = canvas::core::title::kSizeDefault;
         auto rf = decoder.frame(pt, 5);
         report(rf && (rf->a || rf->nv12), "titled media clip frame() assembles pixels");
         report(!rf || rf->nv12 == nullptr,
@@ -268,12 +268,12 @@ int main() {
 
         Project tb;
         tb.name = "title-only";
-        tb.sequence.fps = kFps;
-        tb.sequence.next_clip_id = 1;
+        tb.active_sequence().fps = kFps;
+        tb.active_sequence().next_clip_id = 1;
         Track tt;
         tt.kind = Track::Kind::Video;
         Clip tc;
-        tc.id = tb.sequence.next_clip_id++;
+        tc.id = tb.active_sequence().next_clip_id++;
         tc.media = -1;
         tc.tl_in = 0;
         tc.tl_out = kFrames;
@@ -283,7 +283,7 @@ int main() {
         tc.title.text = "T";
         tc.title.size = canvas::core::title::kSizeDefault;
         tt.clips.push_back(tc);
-        tb.sequence.video_tracks.push_back(std::move(tt));
+        tb.active_sequence().video_tracks.push_back(std::move(tt));
 
         auto fr = decoder.frame(tb, 5);
         report(fr && fr->a, "bare title clip frame() returns a CPU RGBA canvas");

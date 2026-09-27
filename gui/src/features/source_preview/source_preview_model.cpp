@@ -16,10 +16,10 @@ std::shared_ptr<const canvas::core::Project> build_source_project(
 
     double fps = media.fps > 0.0 ? media.fps : fallback_fps;
     if (fps <= 0.0) fps = 30.0;
-    project->sequence.fps = fps;
+    project->active_sequence().fps = fps;
 
     const int64_t frames = media.total_frames > 0 ? media.total_frames : 1;
-    canvas::core::ClipId next_id = project->sequence.next_clip_id;
+    canvas::core::ClipId next_id = project->active_sequence().next_clip_id;
 
     if (media.width > 0 && media.height > 0) {
         canvas::core::Track video;
@@ -33,7 +33,7 @@ std::shared_ptr<const canvas::core::Project> build_source_project(
         clip.src_in = 0;
         clip.src_out = frames;
         video.clips.push_back(std::move(clip));
-        project->sequence.video_tracks.push_back(std::move(video));
+        project->active_sequence().video_tracks.push_back(std::move(video));
     }
 
     if (media.has_audio) {
@@ -47,18 +47,18 @@ std::shared_ptr<const canvas::core::Project> build_source_project(
         clip.tl_out = frames;
         clip.src_in = 0;
         clip.src_out = frames;
-        if (!project->sequence.video_tracks.empty() &&
-            !project->sequence.video_tracks.front().clips.empty()) {
+        if (!project->active_sequence().video_tracks.empty() &&
+            !project->active_sequence().video_tracks.front().clips.empty()) {
             const canvas::core::ClipId video_id =
-                project->sequence.video_tracks.front().clips.front().id;
+                project->active_sequence().video_tracks.front().clips.front().id;
             clip.linked_id = video_id;
-            project->sequence.video_tracks.front().clips.front().linked_id = clip.id;
+            project->active_sequence().video_tracks.front().clips.front().linked_id = clip.id;
         }
         audio.clips.push_back(std::move(clip));
-        project->sequence.audio_tracks.push_back(std::move(audio));
+        project->active_sequence().audio_tracks.push_back(std::move(audio));
     }
 
-    project->sequence.next_clip_id = next_id;
+    project->active_sequence().next_clip_id = next_id;
     return project;
 }
 

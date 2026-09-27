@@ -152,7 +152,7 @@ bool region_matches(const std::vector<float>& v, std::size_t begin, std::size_t 
 Project make_project(int64_t src_in, int64_t src_out) {
     Project p;
     p.name = "AudioPipelineTest";
-    p.sequence.fps = kFps;
+    p.active_sequence().fps = kFps;
 
     MediaEntry m0;
     m0.id = 0;
@@ -169,7 +169,7 @@ Project make_project(int64_t src_in, int64_t src_out) {
     a1.kind = Track::Kind::Audio;
     a1.name = "A1";
     Clip c;
-    c.id = p.sequence.next_clip_id++;
+    c.id = p.active_sequence().next_clip_id++;
     c.media = 0;
     c.name = "Tone";
     c.tl_in = 0;
@@ -178,7 +178,7 @@ Project make_project(int64_t src_in, int64_t src_out) {
     c.src_out = src_out;
     c.enabled = true;
     a1.clips.push_back(c);
-    p.sequence.audio_tracks.push_back(std::move(a1));
+    p.active_sequence().audio_tracks.push_back(std::move(a1));
     return p;
 }
 
@@ -310,7 +310,7 @@ int main() {
 
     {
         Harness h;
-        Clip& clip = h.project.sequence.audio_tracks[0].clips[0];
+        Clip& clip = h.project.active_sequence().audio_tracks[0].clips[0];
         clip.transition_out = TransitionType::AudioFadeConstantGain;
         clip.transition_out_duration = 10;
         h.pipe.rewind(166, true);
@@ -350,7 +350,7 @@ int main() {
         a2.kind = Track::Kind::Audio;
         a2.name = "A2";
         Clip c2;
-        c2.id = p.sequence.next_clip_id++;
+        c2.id = p.active_sequence().next_clip_id++;
         c2.media = 1;
         c2.name = "Tone2";
         c2.tl_in = 0;
@@ -359,7 +359,7 @@ int main() {
         c2.src_out = 180;
         c2.enabled = true;
         a2.clips.push_back(c2);
-        p.sequence.audio_tracks.push_back(std::move(a2));
+        p.active_sequence().audio_tracks.push_back(std::move(a2));
 
         const auto run = [&]() -> std::vector<float> {
             canvas::gui::test::FakeAudioSink sink;
@@ -391,7 +391,7 @@ int main() {
         }
 
         {
-            p.sequence.audio_tracks[0].muted = true;
+            p.active_sequence().audio_tracks[0].muted = true;
             const auto all = run();
             bool ok = !all.empty();
             for (std::size_t i = 0; i < all.size() && ok; ++i) {
@@ -400,11 +400,11 @@ int main() {
                 if (std::fabs(all[i] - want) > 1e-3f) ok = false;
             }
             check(ok, "G2: muted audio track is silent (A2 alone)");
-            p.sequence.audio_tracks[0].muted = false;
+            p.active_sequence().audio_tracks[0].muted = false;
         }
 
         {
-            p.sequence.audio_tracks[1].solo = true;
+            p.active_sequence().audio_tracks[1].solo = true;
             const auto all = run();
             bool ok = !all.empty();
             for (std::size_t i = 0; i < all.size() && ok; ++i) {
@@ -413,11 +413,11 @@ int main() {
                 if (std::fabs(all[i] - want) > 1e-3f) ok = false;
             }
             check(ok, "G2: solo isolates the soloed track (A1 silenced)");
-            p.sequence.audio_tracks[1].solo = false;
+            p.active_sequence().audio_tracks[1].solo = false;
         }
 
         {
-            p.sequence.audio_tracks[1].clips[0].pan = 1.0f;
+            p.active_sequence().audio_tracks[1].clips[0].pan = 1.0f;
             const auto all = run();
             bool ok = !all.empty();
             for (std::size_t i = 0; i < all.size() && ok; ++i) {
@@ -428,11 +428,11 @@ int main() {
                 if (std::fabs(all[i] - want) > 1e-3f) ok = false;
             }
             check(ok, "G2: hard-panned track is silent on the opposite channel");
-            p.sequence.audio_tracks[1].clips[0].pan = 0.0f;
+            p.active_sequence().audio_tracks[1].clips[0].pan = 0.0f;
         }
 
         {
-            p.sequence.audio_tracks[1].clips[0].volume_db = -6.0f;
+            p.active_sequence().audio_tracks[1].clips[0].volume_db = -6.0f;
             const auto all = run();
             bool ok = !all.empty();
             for (std::size_t i = 0; i < all.size() && ok; ++i) {
@@ -444,11 +444,11 @@ int main() {
                 if (std::fabs(all[i] - want) > 1.5e-3f) ok = false;
             }
             check(ok, "G2: -6 dB clip volume halves the track's contribution");
-            p.sequence.audio_tracks[1].clips[0].volume_db = 0.0f;
+            p.active_sequence().audio_tracks[1].clips[0].volume_db = 0.0f;
         }
 
         {
-            p.sequence.audio_tracks[0].gain_db = -6.0f;
+            p.active_sequence().audio_tracks[0].gain_db = -6.0f;
             const auto all = run();
             bool ok = !all.empty();
             for (std::size_t i = 0; i < all.size() && ok; ++i) {
@@ -460,7 +460,7 @@ int main() {
                 if (std::fabs(all[i] - want) > 1.5e-3f) ok = false;
             }
             check(ok, "G3: -6 dB track gain scales only that audio track");
-            p.sequence.audio_tracks[0].gain_db = 0.0f;
+            p.active_sequence().audio_tracks[0].gain_db = 0.0f;
         }
 
         {
@@ -492,8 +492,8 @@ int main() {
         m4.fps = kFps;
         m4.width = 320; m4.height = 180; m4.total_frames = 180; m4.bin = "Scratch";
         p4.media.push_back(m4);
-        p4.sequence.audio_tracks[0].clips[0].media = 10;
-        p4.sequence.audio_tracks[0].clips[0].name = "Quad";
+        p4.active_sequence().audio_tracks[0].clips[0].media = 10;
+        p4.active_sequence().audio_tracks[0].clips[0].name = "Quad";
 
         canvas::gui::test::FakeAudioSink sink4;
         canvas::gui::AudioPipeline pipe4{sink4};
@@ -541,7 +541,7 @@ int main() {
         mm.fps = kFps;
         mm.width = 320; mm.height = 180; mm.total_frames = 180; mm.bin = "Scratch";
         pm.media.push_back(mm);
-        pm.sequence.audio_tracks[0].clips[0].media = 11;
+        pm.active_sequence().audio_tracks[0].clips[0].media = 11;
         canvas::gui::test::FakeAudioSink sinkm;
         canvas::gui::AudioPipeline pipem{sinkm};
         pipem.set_channels(4);
@@ -632,7 +632,7 @@ int main() {
         a2.kind = Track::Kind::Audio;
         a2.name = "A2";
         Clip c2;
-        c2.id = p.sequence.next_clip_id++;
+        c2.id = p.active_sequence().next_clip_id++;
         c2.media = 1;
         c2.name = "Tone2";
         c2.tl_in = 0;
@@ -641,7 +641,7 @@ int main() {
         c2.src_out = 180;
         c2.enabled = true;
         a2.clips.push_back(c2);
-        p.sequence.audio_tracks.push_back(std::move(a2));
+        p.active_sequence().audio_tracks.push_back(std::move(a2));
 
         canvas::gui::test::FakeAudioSink sink;
         canvas::gui::AudioPipeline pipe{sink};
@@ -671,16 +671,16 @@ int main() {
 
     {
         Project p = make_project(0, 180);
-        Clip& k1 = p.sequence.audio_tracks[0].clips[0];
+        Clip& k1 = p.active_sequence().audio_tracks[0].clips[0];
         k1.tl_out = 90;
         k1.src_out = 90;
         Clip k2 = k1;
-        k2.id = p.sequence.next_clip_id++;
+        k2.id = p.active_sequence().next_clip_id++;
         k2.tl_in = 90;
         k2.tl_out = 180;
         k2.src_in = 0;
         k2.src_out = 90;
-        p.sequence.audio_tracks[0].clips.push_back(k2);
+        p.active_sequence().audio_tracks[0].clips.push_back(k2);
 
         canvas::gui::test::FakeAudioSink sink;
         canvas::gui::AudioPipeline pipe{sink};
@@ -718,8 +718,8 @@ int main() {
         Project p = make_project(0, 600);
         p.media[0].path = wavI;
         p.media[0].total_frames = 600;
-        p.sequence.audio_tracks[0].clips[0].tl_out = 600;
-        p.sequence.audio_tracks[0].clips[0].src_out = 600;
+        p.active_sequence().audio_tracks[0].clips[0].tl_out = 600;
+        p.active_sequence().audio_tracks[0].clips[0].src_out = 600;
 
         canvas::gui::test::FakeAudioSink sink;
         canvas::gui::AudioPipeline pipe{sink};

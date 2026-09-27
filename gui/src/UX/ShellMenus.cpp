@@ -182,10 +182,10 @@ void build_app_menus(MainWindow& mw) {
         "timeline.zoom_fit");
     const auto collapse_all = [&mw](bool collapsed) {
         if (!mw.project_) return;
-        auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->sequence, collapsed);
+        auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->active_sequence(), collapsed);
         if (!cmd) return;
         mw.has_unsaved_changes_ = true;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         mw.refresh_timeline();
         mw.push_snapshot();
     };

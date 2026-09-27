@@ -99,12 +99,12 @@ void test_chapters() {
 void test_json_roundtrip() {
     Project p;
     p.name = "Markers";
-    p.sequence.fps = 24.0;
-    const uint64_t a = p.sequence.toggle_bookmark(48, "Act One");
-    const uint64_t b = p.sequence.add_range(96, 192, "Montage");
+    p.active_sequence().fps = 24.0;
+    const uint64_t a = p.active_sequence().toggle_bookmark(48, "Act One");
+    const uint64_t b = p.active_sequence().add_range(96, 192, "Montage");
     (void)a;
     (void)b;
-    const uint64_t next_before = p.sequence.next_bookmark_id;
+    const uint64_t next_before = p.active_sequence().next_bookmark_id;
 
     const std::string path = "/tmp/canvas_markers_test.ncs";
     std::string err;
@@ -112,17 +112,17 @@ void test_json_roundtrip() {
     Project q;
     check(load_project(q, path, &err), "load project with markers");
 
-    check(q.sequence.bookmarks.size() == 2, "both markers round-trip");
-    check(q.sequence.bookmarks[0].label == "Act One" && q.sequence.bookmarks[0].frame == 48,
+    check(q.active_sequence().bookmarks.size() == 2, "both markers round-trip");
+    check(q.active_sequence().bookmarks[0].label == "Act One" && q.active_sequence().bookmarks[0].frame == 48,
           "point marker fields round-trip");
-    check(q.sequence.bookmarks[1].is_range() && q.sequence.bookmarks[1].frame == 96 &&
-              q.sequence.bookmarks[1].tl_out == 192,
+    check(q.active_sequence().bookmarks[1].is_range() && q.active_sequence().bookmarks[1].frame == 96 &&
+              q.active_sequence().bookmarks[1].tl_out == 192,
           "range marker fields round-trip");
-    check(q.sequence.next_bookmark_id == next_before, "next_bookmark_id round-trips");
+    check(q.active_sequence().next_bookmark_id == next_before, "next_bookmark_id round-trips");
 
-    const uint64_t fresh = q.sequence.toggle_bookmark(1000, "new");
+    const uint64_t fresh = q.active_sequence().toggle_bookmark(1000, "new");
     bool collision = false;
-    for (const auto& m : q.sequence.bookmarks)
+    for (const auto& m : q.active_sequence().bookmarks)
         if (m.id == fresh && m.frame != 1000) collision = true;
     check(fresh != 0 && !collision, "new marker gets a fresh id after load");
 }

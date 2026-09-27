@@ -111,6 +111,9 @@ void test_mp4_policy() {
     const auto acs = deliver_model::audio_codecs_for_format("MP4");
     CHECK(contains(acs, "AAC"));
     CHECK(contains(acs, "FLAC"));
+    CHECK(contains(acs, "ALAC"));
+    CHECK(contains(acs, "AC-3"));
+    CHECK(contains(acs, "E-AC-3"));
 }
 
 void test_mkv_exposes_every_codec() {
@@ -134,7 +137,8 @@ void test_avi_policy() {
     CHECK(contains(vcs, "FFV1"));
     CHECK(!contains(vcs, "AV1"));
     const auto acs = deliver_model::audio_codecs_for_format("AVI");
-    CHECK(acs.size() == 2 && contains(acs, "PCM") && contains(acs, "MP3"));
+    CHECK(acs.size() == 3 && contains(acs, "PCM") && contains(acs, "MP3") &&
+          contains(acs, "AC-3"));
     CHECK(!contains(acs, "AAC"));
 }
 

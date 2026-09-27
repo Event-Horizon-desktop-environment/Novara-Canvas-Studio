@@ -105,7 +105,7 @@ float test_wav_sample(int64_t frame, int ch) {
 Project make_project() {
     Project p;
     p.name = "RoundTrip";
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
 
     MediaEntry m0;
     m0.id = 0;
@@ -125,8 +125,8 @@ Project make_project() {
     Track a1;
     a1.kind = Track::Kind::Audio;
     a1.name = "A1";
-    p.sequence.video_tracks.push_back(std::move(v1));
-    p.sequence.audio_tracks.push_back(std::move(a1));
+    p.active_sequence().video_tracks.push_back(std::move(v1));
+    p.active_sequence().audio_tracks.push_back(std::move(a1));
     return p;
 }
 
@@ -144,7 +144,7 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 60;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "place_clip overwrite returns command");
         undo.record(std::move(cmd));
 
@@ -153,48 +153,48 @@ int main() {
         b.name = "B";
         b.src_in = 0;
         b.src_out = 90;
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, b, Placement::AppendAtEnd);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, b, Placement::AppendAtEnd);
         check(cmd != nullptr, "append_clip returns command");
         undo.record(std::move(cmd));
 
-        check(p.sequence.duration_frames() == 150, "duration after two clips is 150");
+        check(p.active_sequence().duration_frames() == 150, "duration after two clips is 150");
 
-        cmd = blade_at(p.sequence, Track::Kind::Video, 0, 30);
+        cmd = blade_at(p.active_sequence(), Track::Kind::Video, 0, 30);
         check(cmd != nullptr, "blade_at returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips.size() == 3, "blade splits clip into two (3 clips)");
+        check(p.active_sequence().video_tracks[0].clips.size() == 3, "blade splits clip into two (3 clips)");
 
-        cmd = lift_range(p.sequence, Track::Kind::Video, 0, 0, 30);
+        cmd = lift_range(p.active_sequence(), Track::Kind::Video, 0, 0, 30);
         check(cmd != nullptr, "lift_range returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips.size() == 2, "lift removes one clip");
-        const int64_t dur_before = p.sequence.duration_frames();
+        check(p.active_sequence().video_tracks[0].clips.size() == 2, "lift removes one clip");
+        const int64_t dur_before = p.active_sequence().duration_frames();
         check(dur_before == 150, "lift keeps total duration (gap left)");
 
-        check(undo.undo(p.sequence), "undo lift");
-        check(p.sequence.video_tracks[0].clips.size() == 3, "after undo, 3 clips again");
+        check(undo.undo(p.active_sequence()), "undo lift");
+        check(p.active_sequence().video_tracks[0].clips.size() == 3, "after undo, 3 clips again");
 
-        check(undo.redo(p.sequence), "redo lift");
-        check(p.sequence.video_tracks[0].clips.size() == 2, "after redo, 2 clips");
+        check(undo.redo(p.active_sequence()), "redo lift");
+        check(p.active_sequence().video_tracks[0].clips.size() == 2, "after redo, 2 clips");
 
-        cmd = ripple_delete_range(p.sequence, Track::Kind::Video, 0, 30, 120);
+        cmd = ripple_delete_range(p.active_sequence(), Track::Kind::Video, 0, 30, 120);
         check(cmd != nullptr, "ripple_delete_range returns command");
         undo.record(std::move(cmd));
         std::printf("  info: after ripple delete, duration=%lld clips=%zu\n",
-                    (long long)p.sequence.duration_frames(), p.sequence.video_tracks[0].clips.size());
-        check(p.sequence.video_tracks[0].clips.size() == 1, "ripple delete leaves one clip");
-        check(p.sequence.video_tracks[0].clips[0].duration() == 30, "ripple delete leaves 30-frame clip");
-        check(p.sequence.duration_frames() == 60, "ripple delete closes gap (end frame 60)");
+                    (long long)p.active_sequence().duration_frames(), p.active_sequence().video_tracks[0].clips.size());
+        check(p.active_sequence().video_tracks[0].clips.size() == 1, "ripple delete leaves one clip");
+        check(p.active_sequence().video_tracks[0].clips[0].duration() == 30, "ripple delete leaves 30-frame clip");
+        check(p.active_sequence().duration_frames() == 60, "ripple delete closes gap (end frame 60)");
 
-        p.sequence.video_tracks[0].clips[0].clip_tag = Clip::ClipTag::GoodTake;
-        p.sequence.video_tracks[0].clips[0].clip_color = 7;
-        p.sequence.video_tracks[0].clips[0].comments = "keeper shot";
-        p.sequence.video_tracks[0].clips[0].speed_enabled = true;
-        p.sequence.video_tracks[0].clips[0].speed_factor = 2.0;
-        p.sequence.video_tracks[0].clips[0].pitch_semitones = 2.0f;
-        p.sequence.video_tracks[0].clips[0].pitch_cents = 50.0f;
-        p.sequence.video_tracks[0].clips[0].eq_enabled = true;
-        auto& eq = p.sequence.video_tracks[0].clips[0].eq_bands;
+        p.active_sequence().video_tracks[0].clips[0].clip_tag = Clip::ClipTag::GoodTake;
+        p.active_sequence().video_tracks[0].clips[0].clip_color = 7;
+        p.active_sequence().video_tracks[0].clips[0].comments = "keeper shot";
+        p.active_sequence().video_tracks[0].clips[0].speed_enabled = true;
+        p.active_sequence().video_tracks[0].clips[0].speed_factor = 2.0;
+        p.active_sequence().video_tracks[0].clips[0].pitch_semitones = 2.0f;
+        p.active_sequence().video_tracks[0].clips[0].pitch_cents = 50.0f;
+        p.active_sequence().video_tracks[0].clips[0].eq_enabled = true;
+        auto& eq = p.active_sequence().video_tracks[0].clips[0].eq_bands;
         eq[1].gain = -4.5f;
         eq[1].q = 2.0f;
         eq[3].frequency = 4000.0f;
@@ -205,9 +205,9 @@ int main() {
 
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/roundtrip.ehproj", &err), "load_project");
-        check(tracks_equal(p.sequence.video_tracks, loaded.sequence.video_tracks),
+        check(tracks_equal(p.active_sequence().video_tracks, loaded.active_sequence().video_tracks),
               "video tracks identical after round-trip");
-        const Clip& lc = loaded.sequence.video_tracks[0].clips[0];
+        const Clip& lc = loaded.active_sequence().video_tracks[0].clips[0];
         check(lc.clip_tag == Clip::ClipTag::GoodTake, "clip tag preserved");
         check(lc.clip_color == 7, "clip colour preserved");
         check(lc.comments == "keeper shot", "clip comments preserved");
@@ -223,12 +223,12 @@ int main() {
         check(loaded.media.size() == 1 && loaded.media[0].bin == "Scratch", "media bin preserved");
         check(loaded.bins.size() == 1 && loaded.bins[0] == "Scratch", "bins list preserved");
 
-        check(undo.undo(p.sequence), "undo ripple delete");
-        check(p.sequence.video_tracks[0].clips.size() == 2, "after undo ripple, 2 clips");
-        check(p.sequence.duration_frames() == 150, "after undo ripple, duration 150");
+        check(undo.undo(p.active_sequence()), "undo ripple delete");
+        check(p.active_sequence().video_tracks[0].clips.size() == 2, "after undo ripple, 2 clips");
+        check(p.active_sequence().duration_frames() == 150, "after undo ripple, duration 150");
 
-        while (undo.undo(p.sequence)) {}
-        check(p.sequence.video_tracks[0].clips.empty(), "unwound to empty track");
+        while (undo.undo(p.active_sequence())) {}
+        check(p.active_sequence().video_tracks[0].clips.empty(), "unwound to empty track");
     }
 
     {
@@ -239,23 +239,23 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 60;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "transition-blade: place clip");
         undo.record(std::move(cmd));
 
-        const ClipId a_id = p.sequence.video_tracks[0].clips[0].id;
-        cmd = set_clip_transition(p.sequence, Track::Kind::Video, 0, a_id,
+        const ClipId a_id = p.active_sequence().video_tracks[0].clips[0].id;
+        cmd = set_clip_transition(p.active_sequence(), Track::Kind::Video, 0, a_id,
                                   TransitionType::CrossDissolve, 14);
         check(cmd != nullptr, "transition-blade: add OUT fade");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].has_transition_out(),
+        check(p.active_sequence().video_tracks[0].clips[0].has_transition_out(),
               "transition-blade: fade is stored on the clip");
 
-        cmd = blade_at(p.sequence, Track::Kind::Video, 0, 15);
+        cmd = blade_at(p.active_sequence(), Track::Kind::Video, 0, 15);
         check(cmd != nullptr, "transition-blade: cut mid-fade clip");
         undo.record(std::move(cmd));
 
-        const auto& clips = p.sequence.video_tracks[0].clips;
+        const auto& clips = p.active_sequence().video_tracks[0].clips;
         check(clips.size() == 2, "transition-blade: clip split in two");
         if (clips.size() == 2) {
             check(!clips[0].has_transition_out(), "transition-blade: seam is a plain cut (left half)");
@@ -273,20 +273,20 @@ int main() {
         a.tl_in = 828;
         a.src_in = 0;
         a.src_out = 30661;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite, 60.0);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite, 60.0);
         check(cmd != nullptr, "rate-blade: place 60fps clip at 30fps timeline");
         undo.record(std::move(cmd));
 
-        const auto& placed = p.sequence.video_tracks[0].clips[0];
+        const auto& placed = p.active_sequence().video_tracks[0].clips[0];
         const double tl_span = static_cast<double>(placed.tl_out - placed.tl_in);
         check(tl_span > 0.0 && std::abs((placed.src_out - placed.src_in) / tl_span - 2.0) < 1e-3,
               "rate-blade: placed clip has src/tl rate ~2.0");
 
-        cmd = blade_at(p.sequence, Track::Kind::Video, 0, 1214);
+        cmd = blade_at(p.active_sequence(), Track::Kind::Video, 0, 1214);
         check(cmd != nullptr, "rate-blade: cut mid-rate clip");
         undo.record(std::move(cmd));
 
-        const auto& clips = p.sequence.video_tracks[0].clips;
+        const auto& clips = p.active_sequence().video_tracks[0].clips;
         if (clips.size() == 2) {
             const int64_t left_src_out = clips[0].src_out;
             check(left_src_out == 772,
@@ -316,16 +316,16 @@ int main() {
         v.src_out = 600;
         Clip a = v;
         a.name = "A60";
-        auto cmd = place_linked_clip(p.sequence, 0, 0, v, a, Placement::Overwrite, 60.0);
+        auto cmd = place_linked_clip(p.active_sequence(), 0, 0, v, a, Placement::Overwrite, 60.0);
         check(cmd != nullptr, "linked-rate-blade: place linked 60fps pair");
         undo.record(std::move(cmd));
 
-        cmd = blade_linked_at(p.sequence, Track::Kind::Video, 0, 150);
+        cmd = blade_linked_at(p.active_sequence(), Track::Kind::Video, 0, 150);
         check(cmd != nullptr, "linked-rate-blade: cut linked pair");
         undo.record(std::move(cmd));
 
-        const auto& vc = p.sequence.video_tracks[0].clips;
-        const auto& ac = p.sequence.audio_tracks[0].clips;
+        const auto& vc = p.active_sequence().video_tracks[0].clips;
+        const auto& ac = p.active_sequence().audio_tracks[0].clips;
         if (vc.size() == 2 && ac.size() == 2) {
             auto rate = [](const Clip& c) {
                 return static_cast<double>(c.src_out - c.src_in) /
@@ -350,57 +350,57 @@ int main() {
         v.src_in = 0;
         v.src_out = 60;
         Clip a = v;
-        auto cmd = place_linked_clip(p.sequence, 0, 0, v, a, Placement::Overwrite);
+        auto cmd = place_linked_clip(p.active_sequence(), 0, 0, v, a, Placement::Overwrite);
         check(cmd != nullptr, "place_linked_clip returns command");
         undo.record(std::move(cmd));
 
-        const auto& vc = p.sequence.video_tracks[0].clips[0];
-        const auto& ac = p.sequence.audio_tracks[0].clips[0];
+        const auto& vc = p.active_sequence().video_tracks[0].clips[0];
+        const auto& ac = p.active_sequence().audio_tracks[0].clips[0];
         check(vc.is_linked() && ac.is_linked(), "linked pair is mutually linked");
         check(vc.linked_id == ac.id && ac.linked_id == vc.id, "reciprocal linked ids");
 
-        cmd = move_clip(p.sequence, Track::Kind::Video, 0, vc.id,
+        cmd = move_clip(p.active_sequence(), Track::Kind::Video, 0, vc.id,
                         Track::Kind::Video, 0, 30);
         check(cmd != nullptr, "move linked video returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 30 &&
-              p.sequence.audio_tracks[0].clips[0].tl_in == 30,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 30 &&
+              p.active_sequence().audio_tracks[0].clips[0].tl_in == 30,
               "moving video moves audio mate");
 
-        const auto& mv = p.sequence.video_tracks[0].clips[0];
-        cmd = lift_range(p.sequence, Track::Kind::Video, 0, mv.tl_in, mv.tl_out);
+        const auto& mv = p.active_sequence().video_tracks[0].clips[0];
+        cmd = lift_range(p.active_sequence(), Track::Kind::Video, 0, mv.tl_in, mv.tl_out);
         check(cmd != nullptr, "lift linked video returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips.empty() && p.sequence.audio_tracks[0].clips.empty(),
+        check(p.active_sequence().video_tracks[0].clips.empty() && p.active_sequence().audio_tracks[0].clips.empty(),
               "deleting video removes linked audio");
 
-        undo.undo(p.sequence);
-        undo.undo(p.sequence);
-        const auto& uvc = p.sequence.video_tracks[0].clips[0];
-        cmd = unlink_clip(p.sequence, Track::Kind::Video, 0, uvc.id);
+        undo.undo(p.active_sequence());
+        undo.undo(p.active_sequence());
+        const auto& uvc = p.active_sequence().video_tracks[0].clips[0];
+        cmd = unlink_clip(p.active_sequence(), Track::Kind::Video, 0, uvc.id);
         check(cmd != nullptr, "unlink returns command");
         undo.record(std::move(cmd));
-        check(!p.sequence.video_tracks[0].clips[0].is_linked() &&
-              !p.sequence.audio_tracks[0].clips[0].is_linked(),
+        check(!p.active_sequence().video_tracks[0].clips[0].is_linked() &&
+              !p.active_sequence().audio_tracks[0].clips[0].is_linked(),
               "unlink clears both sides");
 
-        const auto& uc = p.sequence.video_tracks[0].clips[0];
-        cmd = move_clip(p.sequence, Track::Kind::Video, 0, uc.id, Track::Kind::Video, 0, 40);
+        const auto& uc = p.active_sequence().video_tracks[0].clips[0];
+        cmd = move_clip(p.active_sequence(), Track::Kind::Video, 0, uc.id, Track::Kind::Video, 0, 40);
         check(cmd != nullptr, "move unlinked video returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 40 &&
-              p.sequence.audio_tracks[0].clips[0].tl_in == 0,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 40 &&
+              p.active_sequence().audio_tracks[0].clips[0].tl_in == 0,
               "unlinked video moves independently of audio");
 
-        const auto& relink = p.sequence.video_tracks[0].clips[0];
-        cmd = link_clip(p.sequence, Track::Kind::Video, 0, relink.id);
+        const auto& relink = p.active_sequence().video_tracks[0].clips[0];
+        cmd = link_clip(p.active_sequence(), Track::Kind::Video, 0, relink.id);
         check(cmd != nullptr, "link_clip returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].is_linked() &&
-              p.sequence.audio_tracks[0].clips[0].is_linked(),
+        check(p.active_sequence().video_tracks[0].clips[0].is_linked() &&
+              p.active_sequence().audio_tracks[0].clips[0].is_linked(),
               "link_clip re-links both sides");
 
-        cmd = link_clip(p.sequence, Track::Kind::Video, 0, relink.id);
+        cmd = link_clip(p.active_sequence(), Track::Kind::Video, 0, relink.id);
         check(cmd == nullptr, "link_clip on linked clip returns nullptr");
     }
 
@@ -414,27 +414,27 @@ int main() {
         v.src_in = 0;
         v.src_out = 60;
         Clip a = v;
-        auto cmd = place_linked_clip(p.sequence, 0, 0, v, a, Placement::Overwrite);
+        auto cmd = place_linked_clip(p.active_sequence(), 0, 0, v, a, Placement::Overwrite);
         check(cmd != nullptr, "place_linked_clip (cross-track) returns command");
         undo.record(std::move(cmd));
 
         Track v2;
         v2.kind = Track::Kind::Video;
         v2.name = "V2";
-        p.sequence.video_tracks.push_back(std::move(v2));
+        p.active_sequence().video_tracks.push_back(std::move(v2));
 
-        const auto& vc = p.sequence.video_tracks[0].clips[0];
-        cmd = move_clip(p.sequence, Track::Kind::Video, 0, vc.id,
+        const auto& vc = p.active_sequence().video_tracks[0].clips[0];
+        cmd = move_clip(p.active_sequence(), Track::Kind::Video, 0, vc.id,
                         Track::Kind::Video, 1, 30);
         check(cmd != nullptr, "move linked video to V2 returns command");
         undo.record(std::move(cmd));
 
-        check(p.sequence.video_tracks[1].clips.size() == 1, "video moved to V2");
-        check(p.sequence.video_tracks[0].clips.empty(), "video removed from V1");
-        check(p.sequence.audio_tracks[0].clips.size() == 1, "audio mate survives on A1");
-        check(p.sequence.audio_tracks[0].clips[0].tl_in == 30, "audio mate follows timing");
-        check(p.sequence.video_tracks[1].clips[0].is_linked() &&
-              p.sequence.audio_tracks[0].clips[0].is_linked(),
+        check(p.active_sequence().video_tracks[1].clips.size() == 1, "video moved to V2");
+        check(p.active_sequence().video_tracks[0].clips.empty(), "video removed from V1");
+        check(p.active_sequence().audio_tracks[0].clips.size() == 1, "audio mate survives on A1");
+        check(p.active_sequence().audio_tracks[0].clips[0].tl_in == 30, "audio mate follows timing");
+        check(p.active_sequence().video_tracks[1].clips[0].is_linked() &&
+              p.active_sequence().audio_tracks[0].clips[0].is_linked(),
               "link preserved across channels");
     }
 
@@ -622,7 +622,7 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "transition: place clip A");
         undo.record(std::move(cmd));
 
@@ -632,32 +632,32 @@ int main() {
         b.tl_in = 30;
         b.src_in = 0;
         b.src_out = 30;
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, b, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, b, Placement::Overwrite);
         check(cmd != nullptr, "transition: place clip B");
         undo.record(std::move(cmd));
 
-        const ClipId id_a = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId id_a = p.active_sequence().video_tracks[0].clips[0].id;
 
-        cmd = set_clip_transition(p.sequence, Track::Kind::Video, 0, id_a,
+        cmd = set_clip_transition(p.active_sequence(), Track::Kind::Video, 0, id_a,
                                   TransitionType::CrossDissolve, 6);
         check(cmd != nullptr, "set_clip_transition returns command");
         undo.record(std::move(cmd));
-        const Clip& ca = p.sequence.video_tracks[0].clips[0];
+        const Clip& ca = p.active_sequence().video_tracks[0].clips[0];
         check(ca.transition_out == TransitionType::CrossDissolve &&
                   ca.transition_out_duration == 6,
               "clip carries cross-dissolve transition of 6 frames");
 
-        check(undo.undo(p.sequence), "undo transition");
-        check(p.sequence.video_tracks[0].clips[0].transition_out == TransitionType::None,
+        check(undo.undo(p.active_sequence()), "undo transition");
+        check(p.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::None,
               "undo clears transition");
 
-        check(undo.redo(p.sequence), "redo transition");
-        cmd = clear_clip_transition(p.sequence, Track::Kind::Video, 0, id_a);
+        check(undo.redo(p.active_sequence()), "redo transition");
+        cmd = clear_clip_transition(p.active_sequence(), Track::Kind::Video, 0, id_a);
         check(cmd != nullptr, "clear_clip_transition returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].transition_out == TransitionType::None,
+        check(p.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::None,
               "clear removes transition");
-        cmd = set_clip_transition(p.sequence, Track::Kind::Video, 0, id_a,
+        cmd = set_clip_transition(p.active_sequence(), Track::Kind::Video, 0, id_a,
                                   TransitionType::WipeRight, 8);
         check(cmd != nullptr, "set wipe transition returns command");
         undo.record(std::move(cmd));
@@ -666,29 +666,29 @@ int main() {
         check(save_project(p, "/tmp/opencode/media/transition.ehproj", &tr_err), "save project with transition");
         Project tr_loaded;
         check(load_project(tr_loaded, "/tmp/opencode/media/transition.ehproj", &tr_err), "load project with transition");
-        const auto& trc = tr_loaded.sequence.video_tracks[0].clips[0];
+        const auto& trc = tr_loaded.active_sequence().video_tracks[0].clips[0];
         check(trc.transition_out == TransitionType::WipeRight && trc.transition_out_duration == 8,
               "transition type+duration round-trip through serialization");
 
-        cmd = set_clip_transition_in(p.sequence, Track::Kind::Video, 0, id_a,
+        cmd = set_clip_transition_in(p.active_sequence(), Track::Kind::Video, 0, id_a,
                                      TransitionType::FadeIn, 12);
         check(cmd != nullptr, "set_clip_transition_in returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].transition_in == TransitionType::FadeIn &&
-                  p.sequence.video_tracks[0].clips[0].transition_in_duration == 12,
+        check(p.active_sequence().video_tracks[0].clips[0].transition_in == TransitionType::FadeIn &&
+                  p.active_sequence().video_tracks[0].clips[0].transition_in_duration == 12,
               "clip carries IN fade-in transition of 12 frames");
-        check(undo.undo(p.sequence), "undo IN transition");
-        check(p.sequence.video_tracks[0].clips[0].transition_in == TransitionType::None,
+        check(undo.undo(p.active_sequence()), "undo IN transition");
+        check(p.active_sequence().video_tracks[0].clips[0].transition_in == TransitionType::None,
               "undo clears IN transition");
-        check(undo.redo(p.sequence), "redo IN transition");
-        cmd = clear_clip_transition_in(p.sequence, Track::Kind::Video, 0, id_a);
+        check(undo.redo(p.active_sequence()), "redo IN transition");
+        cmd = clear_clip_transition_in(p.active_sequence(), Track::Kind::Video, 0, id_a);
         check(cmd != nullptr, "clear_clip_transition_in returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].transition_in == TransitionType::None &&
-                  p.sequence.video_tracks[0].clips[0].transition_out == TransitionType::WipeRight &&
-                  p.sequence.video_tracks[0].clips[0].transition_out_duration == 8,
+        check(p.active_sequence().video_tracks[0].clips[0].transition_in == TransitionType::None &&
+                  p.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::WipeRight &&
+                  p.active_sequence().video_tracks[0].clips[0].transition_out_duration == 8,
               "clearing IN does not disturb OUT transition");
-        cmd = set_clip_transition_in(p.sequence, Track::Kind::Video, 0, id_a,
+        cmd = set_clip_transition_in(p.active_sequence(), Track::Kind::Video, 0, id_a,
                                      TransitionType::FadeIn, 12);
         check(cmd != nullptr, "restore IN transition for round-trip");
         undo.record(std::move(cmd));
@@ -698,7 +698,7 @@ int main() {
         Project in_loaded;
         check(load_project(in_loaded, "/tmp/opencode/media/transition_in.ehproj", &ierr),
               "load project with IN transition");
-        const auto& in_c = in_loaded.sequence.video_tracks[0].clips[0];
+        const auto& in_c = in_loaded.active_sequence().video_tracks[0].clips[0];
         check(in_c.transition_in == TransitionType::FadeIn && in_c.transition_in_duration == 12,
               "IN transition type+duration round-trip through serialization");
         check(in_c.transition_out == TransitionType::WipeRight && in_c.transition_out_duration == 8,
@@ -711,41 +711,41 @@ int main() {
         v.src_in = 0;
         v.src_out = 30;
         Clip aud = v;
-        cmd = place_linked_clip(lp.sequence, 0, 0, v, aud, Placement::Overwrite);
+        cmd = place_linked_clip(lp.active_sequence(), 0, 0, v, aud, Placement::Overwrite);
         check(cmd != nullptr, "transition: place linked pair");
         undo.record(std::move(cmd));
-        const ClipId vid = lp.sequence.video_tracks[0].clips[0].id;
-        cmd = set_clip_transition(lp.sequence, Track::Kind::Video, 0, vid,
+        const ClipId vid = lp.active_sequence().video_tracks[0].clips[0].id;
+        cmd = set_clip_transition(lp.active_sequence(), Track::Kind::Video, 0, vid,
                                   TransitionType::AudioFadeConstantPower, 10);
         check(cmd != nullptr, "transition: set on linked keyword returns command");
         undo.record(std::move(cmd));
-        check(lp.sequence.video_tracks[0].clips[0].transition_out == TransitionType::AudioFadeConstantPower &&
-                  lp.sequence.audio_tracks[0].clips[0].transition_out == TransitionType::AudioFadeConstantPower,
+        check(lp.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::AudioFadeConstantPower &&
+                  lp.active_sequence().audio_tracks[0].clips[0].transition_out == TransitionType::AudioFadeConstantPower,
               "linked audio mate inherits the transition type");
-        check(lp.sequence.audio_tracks[0].clips[0].transition_out_duration == 10,
+        check(lp.active_sequence().audio_tracks[0].clips[0].transition_out_duration == 10,
               "linked audio mate inherits the transition duration");
 
-        cmd = set_clip_transition(lp.sequence, Track::Kind::Video, 0, vid,
+        cmd = set_clip_transition(lp.active_sequence(), Track::Kind::Video, 0, vid,
                                   TransitionType::CrossDissolve, 10);
         undo.record(std::move(cmd));
-        check(lp.sequence.video_tracks[0].clips[0].transition_out == TransitionType::CrossDissolve &&
-                  lp.sequence.audio_tracks[0].clips[0].transition_out ==
+        check(lp.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::CrossDissolve &&
+                  lp.active_sequence().audio_tracks[0].clips[0].transition_out ==
                       TransitionType::AudioFadeConstantPower,
               "video cross dissolve translates the audio mate to an equal-power fade");
-        cmd = set_clip_transition_in(lp.sequence, Track::Kind::Video, 0, vid,
+        cmd = set_clip_transition_in(lp.active_sequence(), Track::Kind::Video, 0, vid,
                                      TransitionType::DipToBlack, 10);
         undo.record(std::move(cmd));
-        check(lp.sequence.video_tracks[0].clips[0].transition_in == TransitionType::DipToBlack &&
-                  lp.sequence.audio_tracks[0].clips[0].transition_in ==
+        check(lp.active_sequence().video_tracks[0].clips[0].transition_in == TransitionType::DipToBlack &&
+                  lp.active_sequence().audio_tracks[0].clips[0].transition_in ==
                       TransitionType::AudioFadeConstantGain,
               "dip-to-black translates the audio mate to a dip to silence");
-        const ClipId aud_id = lp.sequence.audio_tracks[0].clips[0].id;
-        cmd = set_clip_transition(lp.sequence, Track::Kind::Audio, 0, aud_id,
+        const ClipId aud_id = lp.active_sequence().audio_tracks[0].clips[0].id;
+        cmd = set_clip_transition(lp.active_sequence(), Track::Kind::Audio, 0, aud_id,
                                   TransitionType::AudioFadeConstantGain, 8);
         undo.record(std::move(cmd));
-        check(lp.sequence.audio_tracks[0].clips[0].transition_out ==
+        check(lp.active_sequence().audio_tracks[0].clips[0].transition_out ==
                   TransitionType::AudioFadeConstantGain &&
-                  lp.sequence.video_tracks[0].clips[0].transition_out == TransitionType::FadeOut,
+                  lp.active_sequence().video_tracks[0].clips[0].transition_out == TransitionType::FadeOut,
               "audio fade out translates the video mate to FadeOut");
     }
 
@@ -760,14 +760,14 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Audio, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Audio, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "render-fade: place audio clip");
         undo.record(std::move(cmd));
-        const ClipId id = p.sequence.audio_tracks[0].clips[0].id;
-        cmd = set_clip_transition(p.sequence, Track::Kind::Audio, 0, id,
+        const ClipId id = p.active_sequence().audio_tracks[0].clips[0].id;
+        cmd = set_clip_transition(p.active_sequence(), Track::Kind::Audio, 0, id,
                                   TransitionType::AudioFadeConstantGain, 6);
         undo.record(std::move(cmd));
-        const Clip& fade_clip = p.sequence.audio_tracks[0].clips[0];
+        const Clip& fade_clip = p.active_sequence().audio_tracks[0].clips[0];
 
         constexpr int kRate = 48000;
         auto probe = [&](int64_t start_tl, int frames,
@@ -802,7 +802,7 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "through edit: place clip A");
         undo.record(std::move(cmd));
 
@@ -812,27 +812,27 @@ int main() {
         b.tl_in = 30;
         b.src_in = 30;
         b.src_out = 60;
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, b, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, b, Placement::Overwrite);
         check(cmd != nullptr, "through edit: place clip B");
         undo.record(std::move(cmd));
 
-        const ClipId id_a = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId id_a = p.active_sequence().video_tracks[0].clips[0].id;
 
-        cmd = delete_through_edit(p.sequence, Track::Kind::Video, 0, id_a);
+        cmd = delete_through_edit(p.active_sequence(), Track::Kind::Video, 0, id_a);
         check(cmd != nullptr, "delete_through_edit returns a command for valid cut");
         undo.record(std::move(cmd));
-        const auto& track = p.sequence.video_tracks[0];
+        const auto& track = p.active_sequence().video_tracks[0];
         check(track.clips.size() == 1, "through edit merges into one clip");
         check(track.clips[0].tl_in == 0 && track.clips[0].tl_out == 60,
               "merged clip spans [0, 60)");
         check(track.clips[0].src_in == 0 && track.clips[0].src_out == 60,
               "merged clip spans source [0, 60)");
 
-        check(undo.undo(p.sequence), "undo through edit");
-        check(p.sequence.video_tracks[0].clips.size() == 2,
+        check(undo.undo(p.active_sequence()), "undo through edit");
+        check(p.active_sequence().video_tracks[0].clips.size() == 2,
               "undo restores the two clips separated by a cut");
-        check(undo.redo(p.sequence), "redo through edit");
-        check(p.sequence.video_tracks[0].clips.size() == 1,
+        check(undo.redo(p.active_sequence()), "redo through edit");
+        check(p.active_sequence().video_tracks[0].clips.size() == 1,
               "redo re-merges into one clip");
 
         Project q = make_project();
@@ -841,17 +841,17 @@ int main() {
         c2.tl_in = 0;
         c2.src_in = 0;
         c2.src_out = 30;
-        cmd = place_clip(q.sequence, Track::Kind::Video, 0, c2, Placement::Overwrite);
+        cmd = place_clip(q.active_sequence(), Track::Kind::Video, 0, c2, Placement::Overwrite);
         undo.record(std::move(cmd));
         Clip d2;
         d2.media = 0;
         d2.tl_in = 30;
         d2.src_in = 0;
         d2.src_out = 30;
-        cmd = place_clip(q.sequence, Track::Kind::Video, 0, d2, Placement::Overwrite);
+        cmd = place_clip(q.active_sequence(), Track::Kind::Video, 0, d2, Placement::Overwrite);
         undo.record(std::move(cmd));
-        const ClipId id_c = q.sequence.video_tracks[0].clips[0].id;
-        cmd = delete_through_edit(q.sequence, Track::Kind::Video, 0, id_c);
+        const ClipId id_c = q.active_sequence().video_tracks[0].clips[0].id;
+        cmd = delete_through_edit(q.active_sequence(), Track::Kind::Video, 0, id_c);
         check(cmd == nullptr, "non-continuous cut is not a valid through edit");
     }
 
@@ -871,60 +871,60 @@ int main() {
         av.tl_out = 70;
         av.src_in = 0;
         av.src_out = 60;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, v, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, v, Placement::Overwrite);
         check(cmd != nullptr, "auto-track: place video");
         undo.record(std::move(cmd));
-        cmd = place_clip(p.sequence, Track::Kind::Audio, 0, av, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Audio, 0, av, Placement::Overwrite);
         check(cmd != nullptr, "auto-track: place audio mate");
         undo.record(std::move(cmd));
-        const ClipId v_id = p.sequence.video_tracks[0].clips[0].id;
-        const ClipId a_id = p.sequence.audio_tracks[0].clips[0].id;
-        p.sequence.video_tracks[0].clips[0].linked_id = a_id;
-        p.sequence.audio_tracks[0].clips[0].linked_id = v_id;
+        const ClipId v_id = p.active_sequence().video_tracks[0].clips[0].id;
+        const ClipId a_id = p.active_sequence().audio_tracks[0].clips[0].id;
+        p.active_sequence().video_tracks[0].clips[0].linked_id = a_id;
+        p.active_sequence().audio_tracks[0].clips[0].linked_id = v_id;
 
-        const std::size_t v_before = p.sequence.video_tracks.size();
-        const std::size_t a_before = p.sequence.audio_tracks.size();
-        cmd = create_top_track_move(p.sequence, v_id, 20);
+        const std::size_t v_before = p.active_sequence().video_tracks.size();
+        const std::size_t a_before = p.active_sequence().audio_tracks.size();
+        cmd = create_top_track_move(p.active_sequence(), v_id, 20);
         check(cmd != nullptr, "auto-track: command created");
-        check(p.sequence.video_tracks.size() == v_before + 1,
+        check(p.active_sequence().video_tracks.size() == v_before + 1,
               "auto-track: one video channel added");
-        check(p.sequence.audio_tracks.size() == a_before + 1,
+        check(p.active_sequence().audio_tracks.size() == a_before + 1,
               "auto-track: one audio channel added");
-        check(p.sequence.video_tracks[0].clips.size() == 1 &&
-                  p.sequence.video_tracks[0].clips[0].id == v_id &&
-                  p.sequence.video_tracks[0].clips[0].tl_in == 20,
+        check(p.active_sequence().video_tracks[0].clips.size() == 1 &&
+                  p.active_sequence().video_tracks[0].clips[0].id == v_id &&
+                  p.active_sequence().video_tracks[0].clips[0].tl_in == 20,
               "auto-track: video clip moved to new top video track at tl_in 20");
-        check(p.sequence.audio_tracks[0].clips.size() == 1 &&
-                  p.sequence.audio_tracks[0].clips[0].id == a_id,
+        check(p.active_sequence().audio_tracks[0].clips.size() == 1 &&
+                  p.active_sequence().audio_tracks[0].clips[0].id == a_id,
               "auto-track: audio mate moved to new top audio track");
-        check(p.sequence.video_tracks[0].clips[0].tl_in ==
-                  p.sequence.audio_tracks[0].clips[0].tl_in,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in ==
+                  p.active_sequence().audio_tracks[0].clips[0].tl_in,
               "auto-track: A/V sync preserved after move");
-        check(p.sequence.video_tracks[1].clips.empty() &&
-                  p.sequence.audio_tracks[1].clips.empty(),
+        check(p.active_sequence().video_tracks[1].clips.empty() &&
+                  p.active_sequence().audio_tracks[1].clips.empty(),
               "auto-track: original lanes emptied");
         undo.record(std::move(cmd));
 
-        check(undo.undo(p.sequence), "auto-track: undo");
-        check(p.sequence.video_tracks.size() == v_before + 1 &&
-                  p.sequence.audio_tracks.size() == a_before + 1,
+        check(undo.undo(p.active_sequence()), "auto-track: undo");
+        check(p.active_sequence().video_tracks.size() == v_before + 1 &&
+                  p.active_sequence().audio_tracks.size() == a_before + 1,
               "auto-track: undo keeps the new channels (matches track UX)");
-        check(p.sequence.video_tracks[1].clip_with_id(v_id) != nullptr &&
-                  p.sequence.audio_tracks[1].clip_with_id(a_id) != nullptr,
+        check(p.active_sequence().video_tracks[1].clip_with_id(v_id) != nullptr &&
+                  p.active_sequence().audio_tracks[1].clip_with_id(a_id) != nullptr,
               "auto-track: undo restores clips to original lanes");
-        check(p.sequence.video_tracks[1].clip_with_id(v_id)->tl_in == 10 &&
-                  p.sequence.audio_tracks[1].clip_with_id(a_id)->tl_in == 10,
+        check(p.active_sequence().video_tracks[1].clip_with_id(v_id)->tl_in == 10 &&
+                  p.active_sequence().audio_tracks[1].clip_with_id(a_id)->tl_in == 10,
               "auto-track: undo restores original positions");
-        check(p.sequence.video_tracks[0].clips.empty() &&
-                  p.sequence.audio_tracks[0].clips.empty(),
+        check(p.active_sequence().video_tracks[0].clips.empty() &&
+                  p.active_sequence().audio_tracks[0].clips.empty(),
               "auto-track: undo empties the new lanes");
 
-        check(undo.redo(p.sequence), "auto-track: redo");
-        check(p.sequence.video_tracks[0].clip_with_id(v_id) != nullptr &&
-                  p.sequence.video_tracks[0].clip_with_id(v_id)->tl_in == 20,
+        check(undo.redo(p.active_sequence()), "auto-track: redo");
+        check(p.active_sequence().video_tracks[0].clip_with_id(v_id) != nullptr &&
+                  p.active_sequence().video_tracks[0].clip_with_id(v_id)->tl_in == 20,
               "auto-track: redo re-moves clip to new lane");
 
-        cmd = create_top_track_move(p.sequence, 999999, 0);
+        cmd = create_top_track_move(p.active_sequence(), 999999, 0);
         check(cmd == nullptr, "auto-track: unknown clip id returns nullptr");
     }
 
@@ -935,31 +935,31 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Audio, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Audio, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "audio-mix: place audio clip");
         undo.record(std::move(cmd));
-        const ClipId id = p.sequence.audio_tracks[0].clips[0].id;
+        const ClipId id = p.active_sequence().audio_tracks[0].clips[0].id;
 
-        cmd = set_clip_audio(p.sequence, Track::Kind::Audio, 0, id, -6.0f, 0.75f);
+        cmd = set_clip_audio(p.active_sequence(), Track::Kind::Audio, 0, id, -6.0f, 0.75f);
         check(cmd != nullptr, "audio-mix: set_clip_audio returns command");
         undo.record(std::move(cmd));
-        const auto& ac0 = p.sequence.audio_tracks[0].clips[0];
+        const auto& ac0 = p.active_sequence().audio_tracks[0].clips[0];
         check(ac0.volume_db == -6.0f && ac0.pan == 0.75f,
               "audio-mix: clip carries volume -6 dB and pan 0.75");
 
-        cmd = set_track_muted(p.sequence, Track::Kind::Audio, 0, true);
+        cmd = set_track_muted(p.active_sequence(), Track::Kind::Audio, 0, true);
         check(cmd != nullptr, "audio-mix: set_track_muted returns command");
         undo.record(std::move(cmd));
-        cmd = set_track_solo(p.sequence, Track::Kind::Audio, 0, true);
+        cmd = set_track_solo(p.active_sequence(), Track::Kind::Audio, 0, true);
         check(cmd != nullptr, "audio-mix: set_track_solo returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].muted && p.sequence.audio_tracks[0].solo,
+        check(p.active_sequence().audio_tracks[0].muted && p.active_sequence().audio_tracks[0].solo,
               "audio-mix: track carries muted+solo");
 
-        cmd = set_track_gain(p.sequence, Track::Kind::Audio, 0, -9.0f);
+        cmd = set_track_gain(p.active_sequence(), Track::Kind::Audio, 0, -9.0f);
         check(cmd != nullptr, "audio-mix: set_track_gain returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].gain_db == -9.0f,
+        check(p.active_sequence().audio_tracks[0].gain_db == -9.0f,
               "audio-mix: track carries gain -9 dB");
 
         std::string err;
@@ -968,49 +968,49 @@ int main() {
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/audio_mix.ehproj", &err),
               "audio-mix: load project");
-        const auto& lc = loaded.sequence.audio_tracks[0].clips[0];
+        const auto& lc = loaded.active_sequence().audio_tracks[0].clips[0];
         check(lc.volume_db == -6.0f && lc.pan == 0.75f,
               "audio-mix: clip volume/pan round-trip through serialization");
-        check(loaded.sequence.audio_tracks[0].muted &&
-                  loaded.sequence.audio_tracks[0].solo,
+        check(loaded.active_sequence().audio_tracks[0].muted &&
+                  loaded.active_sequence().audio_tracks[0].solo,
               "audio-mix: track muted/solo round-trip through serialization");
-        check(loaded.sequence.audio_tracks[0].gain_db == -9.0f,
+        check(loaded.active_sequence().audio_tracks[0].gain_db == -9.0f,
               "audio-mix: track gain round-trips through serialization");
 
-        check(undo.undo(p.sequence), "audio-mix: undo gain");
-        check(p.sequence.audio_tracks[0].gain_db == 0.0f,
+        check(undo.undo(p.active_sequence()), "audio-mix: undo gain");
+        check(p.active_sequence().audio_tracks[0].gain_db == 0.0f,
               "audio-mix: undo restores the track gain default");
-        check(undo.undo(p.sequence), "audio-mix: undo solo");
-        check(p.sequence.audio_tracks[0].muted && !p.sequence.audio_tracks[0].solo,
+        check(undo.undo(p.active_sequence()), "audio-mix: undo solo");
+        check(p.active_sequence().audio_tracks[0].muted && !p.active_sequence().audio_tracks[0].solo,
               "audio-mix: undo solo keeps the mute");
-        check(undo.undo(p.sequence), "audio-mix: undo mute");
-        check(!p.sequence.audio_tracks[0].muted && !p.sequence.audio_tracks[0].solo,
+        check(undo.undo(p.active_sequence()), "audio-mix: undo mute");
+        check(!p.active_sequence().audio_tracks[0].muted && !p.active_sequence().audio_tracks[0].solo,
               "audio-mix: undo restores track flags");
-        check(undo.undo(p.sequence), "audio-mix: undo audio");
-        check(p.sequence.audio_tracks[0].clips[0].volume_db == 0.0f &&
-                  p.sequence.audio_tracks[0].clips[0].pan == 0.0f,
+        check(undo.undo(p.active_sequence()), "audio-mix: undo audio");
+        check(p.active_sequence().audio_tracks[0].clips[0].volume_db == 0.0f &&
+                  p.active_sequence().audio_tracks[0].clips[0].pan == 0.0f,
               "audio-mix: undo restores clip defaults");
 
-        cmd = set_track_locked(p.sequence, Track::Kind::Audio, 0, true);
+        cmd = set_track_locked(p.active_sequence(), Track::Kind::Audio, 0, true);
         check(cmd != nullptr, "audio-mix: set_track_locked returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].locked, "audio-mix: lock applied");
-        check(undo.undo(p.sequence), "audio-mix: undo lock");
-        check(!p.sequence.audio_tracks[0].locked, "audio-mix: undo clears lock");
+        check(p.active_sequence().audio_tracks[0].locked, "audio-mix: lock applied");
+        check(undo.undo(p.active_sequence()), "audio-mix: undo lock");
+        check(!p.active_sequence().audio_tracks[0].locked, "audio-mix: undo clears lock");
 
-        const auto& atrk = p.sequence.audio_tracks[0];
-        const auto& vtrk = p.sequence.video_tracks[0];
+        const auto& atrk = p.active_sequence().audio_tracks[0];
+        const auto& vtrk = p.active_sequence().video_tracks[0];
         check(!atrk.collapsed && !vtrk.collapsed,
               "audio-mix: tracks start expanded");
-        cmd = set_track_collapsed(p.sequence, Track::Kind::Audio, 0, true);
+        cmd = set_track_collapsed(p.active_sequence(), Track::Kind::Audio, 0, true);
         check(cmd != nullptr, "collapse: set_track_collapsed returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].collapsed, "collapse: audio track collapsed");
-        cmd = set_track_collapsed(p.sequence, Track::Kind::Video, 0, true);
+        check(p.active_sequence().audio_tracks[0].collapsed, "collapse: audio track collapsed");
+        cmd = set_track_collapsed(p.active_sequence(), Track::Kind::Video, 0, true);
         check(cmd != nullptr, "collapse: set_track_collapsed (video) returns command");
         undo.record(std::move(cmd));
-        cmd = set_track_collapsed(p.sequence, Track::Kind::Video, 0, true);
-        check(cmd != nullptr && p.sequence.video_tracks[0].collapsed,
+        cmd = set_track_collapsed(p.active_sequence(), Track::Kind::Video, 0, true);
+        check(cmd != nullptr && p.active_sequence().video_tracks[0].collapsed,
               "collapse: video track collapsed");
         undo.record(std::move(cmd));
 
@@ -1020,33 +1020,33 @@ int main() {
         Project cloaded;
         check(load_project(cloaded, "/tmp/opencode/media/collapse.ehproj", &cerr),
               "collapse: load project");
-        check(cloaded.sequence.audio_tracks[0].collapsed &&
-                  cloaded.sequence.video_tracks[0].collapsed,
+        check(cloaded.active_sequence().audio_tracks[0].collapsed &&
+                  cloaded.active_sequence().video_tracks[0].collapsed,
               "collapse: collapsed flags round-trip through serialization");
 
-        check(undo.undo(p.sequence), "collapse: undo video no-op");
-        check(p.sequence.video_tracks[0].collapsed, "collapse: no-op undo leaves video collapsed");
-        check(undo.undo(p.sequence), "collapse: undo video collapse");
-        check(!p.sequence.video_tracks[0].collapsed, "collapse: undo expands video");
-        check(undo.undo(p.sequence), "collapse: undo audio collapse");
-        check(p.sequence.audio_tracks[0].collapsed == false &&
-                  p.sequence.video_tracks[0].collapsed == false,
+        check(undo.undo(p.active_sequence()), "collapse: undo video no-op");
+        check(p.active_sequence().video_tracks[0].collapsed, "collapse: no-op undo leaves video collapsed");
+        check(undo.undo(p.active_sequence()), "collapse: undo video collapse");
+        check(!p.active_sequence().video_tracks[0].collapsed, "collapse: undo expands video");
+        check(undo.undo(p.active_sequence()), "collapse: undo audio collapse");
+        check(p.active_sequence().audio_tracks[0].collapsed == false &&
+                  p.active_sequence().video_tracks[0].collapsed == false,
               "collapse: undo restores all-expanded state");
 
         check(!atrk.collapsed && !vtrk.collapsed,
               "collapse-all: tracks start expanded");
-        cmd = set_all_tracks_collapsed(p.sequence, true);
+        cmd = set_all_tracks_collapsed(p.active_sequence(), true);
         check(cmd != nullptr, "collapse-all: returns single command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].collapsed && p.sequence.video_tracks[0].collapsed,
+        check(p.active_sequence().audio_tracks[0].collapsed && p.active_sequence().video_tracks[0].collapsed,
               "collapse-all: every track collapsed to a strip");
-        check(undo.undo(p.sequence), "collapse-all: undo");
-        check(!p.sequence.audio_tracks[0].collapsed &&
-                  !p.sequence.video_tracks[0].collapsed,
+        check(undo.undo(p.active_sequence()), "collapse-all: undo");
+        check(!p.active_sequence().audio_tracks[0].collapsed &&
+                  !p.active_sequence().video_tracks[0].collapsed,
               "collapse-all: one undo restores every track");
-        cmd = set_all_tracks_collapsed(p.sequence, false);
-        check(cmd == nullptr || (!p.sequence.audio_tracks[0].collapsed &&
-                                    !p.sequence.video_tracks[0].collapsed),
+        cmd = set_all_tracks_collapsed(p.active_sequence(), false);
+        check(cmd == nullptr || (!p.active_sequence().audio_tracks[0].collapsed &&
+                                    !p.active_sequence().video_tracks[0].collapsed),
               "collapse-all: expand-no-op leaves tracks expanded");
 
         try {
@@ -1066,34 +1066,34 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "visual: place video clip");
         undo.record(std::move(cmd));
-        const ClipId id = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId id = p.active_sequence().video_tracks[0].clips[0].id;
 
-        cmd = set_clip_transform(p.sequence, Track::Kind::Video, 0, id,
+        cmd = set_clip_transform(p.active_sequence(), Track::Kind::Video, 0, id,
                                  1.5f, 1.0f, 120.0, -80.0, 45.0f, 10.0, -5.0, true, false);
         check(cmd != nullptr, "visual: set_clip_transform returns command");
         undo.record(std::move(cmd));
-        const auto& vc0 = p.sequence.video_tracks[0].clips[0];
+        const auto& vc0 = p.active_sequence().video_tracks[0].clips[0];
         check(vc0.scale_x == 1.5f && vc0.scale_y == 1.0f && vc0.pos_x == 120.0 &&
                   vc0.pos_y == -80.0 && vc0.rotation_deg == 45.0f &&
                   vc0.anchor_dx == 10.0 && vc0.anchor_dy == -5.0 &&
                   vc0.flip_h && !vc0.flip_v,
               "visual: clip carries full transform");
 
-        cmd = set_clip_composite(p.sequence, Track::Kind::Video, 0, id, 0.5f, BlendMode::Screen);
+        cmd = set_clip_composite(p.active_sequence(), Track::Kind::Video, 0, id, 0.5f, BlendMode::Screen);
         check(cmd != nullptr, "visual: set_clip_composite returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].opacity == 0.5f &&
-                  p.sequence.video_tracks[0].clips[0].blend_mode == BlendMode::Screen,
+        check(p.active_sequence().video_tracks[0].clips[0].opacity == 0.5f &&
+                  p.active_sequence().video_tracks[0].clips[0].blend_mode == BlendMode::Screen,
               "visual: clip carries composite opacity/blend");
 
         std::string err;
         check(save_project(p, "/tmp/opencode/media/visual.ehproj", &err), "visual: save project");
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/visual.ehproj", &err), "visual: load project");
-        const auto& lc = loaded.sequence.video_tracks[0].clips[0];
+        const auto& lc = loaded.active_sequence().video_tracks[0].clips[0];
         check(lc.scale_x == 1.5f && lc.scale_y == 1.0f && lc.pos_x == 120.0 &&
                   lc.pos_y == -80.0 && lc.rotation_deg == 45.0f &&
                   lc.anchor_dx == 10.0 && lc.anchor_dy == -5.0 &&
@@ -1101,12 +1101,12 @@ int main() {
                   lc.blend_mode == BlendMode::Screen,
               "visual: full transform/composite round-trip through serialization");
 
-        check(undo.undo(p.sequence), "visual: undo composite");
-        check(p.sequence.video_tracks[0].clips[0].opacity == 1.0f &&
-                  p.sequence.video_tracks[0].clips[0].blend_mode == BlendMode::Normal,
+        check(undo.undo(p.active_sequence()), "visual: undo composite");
+        check(p.active_sequence().video_tracks[0].clips[0].opacity == 1.0f &&
+                  p.active_sequence().video_tracks[0].clips[0].blend_mode == BlendMode::Normal,
               "visual: undo restores composite defaults");
-        check(undo.undo(p.sequence), "visual: undo transform");
-        const auto& vc_undone = p.sequence.video_tracks[0].clips[0];
+        check(undo.undo(p.active_sequence()), "visual: undo transform");
+        const auto& vc_undone = p.active_sequence().video_tracks[0].clips[0];
         check(vc_undone.scale_x == 1.0f && vc_undone.scale_y == 1.0f &&
                   vc_undone.pos_x == 0.0 && vc_undone.pos_y == 0.0 &&
                   vc_undone.rotation_deg == 0.0f && vc_undone.anchor_dx == 0.0 &&
@@ -1119,7 +1119,7 @@ int main() {
         v.tl_in = 0;
         v.src_in = 0;
         v.src_out = 30;
-        cmd = place_clip(lp.sequence, Track::Kind::Video, 0, v, Placement::Overwrite);
+        cmd = place_clip(lp.active_sequence(), Track::Kind::Video, 0, v, Placement::Overwrite);
         check(cmd != nullptr, "visual: place linked video");
         undo.record(std::move(cmd));
         Clip au;
@@ -1127,19 +1127,19 @@ int main() {
         au.tl_in = 0;
         au.src_in = 0;
         au.src_out = 30;
-        cmd = place_clip(lp.sequence, Track::Kind::Audio, 0, au, Placement::Overwrite);
+        cmd = place_clip(lp.active_sequence(), Track::Kind::Audio, 0, au, Placement::Overwrite);
         check(cmd != nullptr, "visual: place linked audio");
         undo.record(std::move(cmd));
-        const ClipId vid = lp.sequence.video_tracks[0].clips[0].id;
-        cmd = link_clip(lp.sequence, Track::Kind::Video, 0, vid);
+        const ClipId vid = lp.active_sequence().video_tracks[0].clips[0].id;
+        cmd = link_clip(lp.active_sequence(), Track::Kind::Video, 0, vid);
         check(cmd != nullptr, "visual: link video to audio mate");
         undo.record(std::move(cmd));
-        cmd = set_clip_transform(lp.sequence, Track::Kind::Video, 0, vid,
+        cmd = set_clip_transform(lp.active_sequence(), Track::Kind::Video, 0, vid,
                                  2.0f, 2.0f, 0.0, 0.0, 90.0f, 0.0, 0.0, false, true);
         check(cmd != nullptr, "visual: transform linked video");
         undo.record(std::move(cmd));
-        check(lp.sequence.audio_tracks[0].clips[0].scale_x == 2.0f &&
-                  lp.sequence.audio_tracks[0].clips[0].flip_v,
+        check(lp.active_sequence().audio_tracks[0].clips[0].scale_x == 2.0f &&
+                  lp.active_sequence().audio_tracks[0].clips[0].flip_v,
               "visual: linked audio mate inherits the video transform");
     }
 
@@ -1252,30 +1252,30 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "trim: place clip");
         undo.record(std::move(cmd));
-        const ClipId id = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId id = p.active_sequence().video_tracks[0].clips[0].id;
 
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 60, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 60, 300);
         check(cmd != nullptr, "trim: tail regrow returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 60 &&
-                  p.sequence.video_tracks[0].clips[0].src_out == 60,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 60 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_out == 60,
               "trim: tail regrow extends tl_out and src_out together");
 
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 10000, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 10000, 300);
         check(cmd != nullptr, "trim: over-long tail request returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 300 &&
-                  p.sequence.video_tracks[0].clips[0].src_out == 300,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 300 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_out == 300,
               "trim: tail clamps to the media duration");
 
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 200, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 200, 300);
         check(cmd != nullptr, "trim: shrink tail returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 200 &&
-                  p.sequence.video_tracks[0].clips[0].src_out == 200,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 200 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_out == 200,
               "trim: tail shrink moves src_out with the edge");
         Clip b;
         b.media = 0;
@@ -1283,47 +1283,47 @@ int main() {
         b.tl_in = 210;
         b.src_in = 0;
         b.src_out = 30;
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, b, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, b, Placement::Overwrite);
         check(cmd != nullptr, "trim: place right neighbor");
         undo.record(std::move(cmd));
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 10000, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 10000, 300);
         check(cmd != nullptr, "trim: neighbor-blocked tail returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 210,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 210,
               "trim: tail clamps to the right neighbor's start");
 
-        cmd = trim_clip_head(p.sequence, Track::Kind::Video, 0, id, 20, 300);
+        cmd = trim_clip_head(p.active_sequence(), Track::Kind::Video, 0, id, 20, 300);
         check(cmd != nullptr, "trim: head regrow returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 20 &&
-                  p.sequence.video_tracks[0].clips[0].src_in == 20,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 20 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_in == 20,
               "trim: head regrow extends tl_in and src_in together");
 
-        cmd = trim_clip_head(p.sequence, Track::Kind::Video, 0, id, -500, 300);
+        cmd = trim_clip_head(p.active_sequence(), Track::Kind::Video, 0, id, -500, 300);
         check(cmd != nullptr, "trim: over-long head request returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 0 &&
-                  p.sequence.video_tracks[0].clips[0].src_in == 0,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 0 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_in == 0,
               "trim: head clamps to the source start");
 
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 210, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 210, 300);
         check(cmd == nullptr, "trim: same-position tail is a no-op");
 
-        check(undo.undo(p.sequence), "trim: undo over-long head");
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 20, "trim: undo restores head");
-        check(undo.undo(p.sequence), "trim: undo head regrow");
-        check(undo.undo(p.sequence), "trim: undo neighbor-blocked tail");
-        check(undo.undo(p.sequence), "trim: undo place neighbor");
-        check(undo.undo(p.sequence), "trim: undo shrink tail");
-        check(undo.undo(p.sequence), "trim: undo over-long tail");
-        check(undo.undo(p.sequence), "trim: undo tail regrow");
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 30 &&
-                  p.sequence.video_tracks[0].clips[0].src_out == 30,
+        check(undo.undo(p.active_sequence()), "trim: undo over-long head");
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 20, "trim: undo restores head");
+        check(undo.undo(p.active_sequence()), "trim: undo head regrow");
+        check(undo.undo(p.active_sequence()), "trim: undo neighbor-blocked tail");
+        check(undo.undo(p.active_sequence()), "trim: undo place neighbor");
+        check(undo.undo(p.active_sequence()), "trim: undo shrink tail");
+        check(undo.undo(p.active_sequence()), "trim: undo over-long tail");
+        check(undo.undo(p.active_sequence()), "trim: undo tail regrow");
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 30 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_out == 30,
               "trim: undo full history restores the original [0,30)");
 
-        Track& v1 = p.sequence.video_tracks[0];
+        Track& v1 = p.active_sequence().video_tracks[0];
         v1.locked = true;
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, id, 60, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, id, 60, 300);
         check(cmd == nullptr, "trim: locked track returns nullptr");
         v1.locked = false;
     }
@@ -1337,10 +1337,10 @@ int main() {
         v.src_in = 30;
         v.src_out = 60;
         Clip au = v;
-        auto cmd = place_linked_clip(p.sequence, 0, 0, v, au, Placement::Overwrite);
+        auto cmd = place_linked_clip(p.active_sequence(), 0, 0, v, au, Placement::Overwrite);
         check(cmd != nullptr, "trim-linked: place linked pair");
         undo.record(std::move(cmd));
-        const ClipId vid = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId vid = p.active_sequence().video_tracks[0].clips[0].id;
 
         Clip constrict;
         constrict.media = 0;
@@ -1348,18 +1348,18 @@ int main() {
         constrict.tl_in = 70;
         constrict.src_in = 0;
         constrict.src_out = 10;
-        cmd = place_clip(p.sequence, Track::Kind::Audio, 0, constrict, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Audio, 0, constrict, Placement::Overwrite);
         check(cmd != nullptr, "trim-linked: place constricting audio clip");
         undo.record(std::move(cmd));
 
-        cmd = trim_clip_tail(p.sequence, Track::Kind::Video, 0, vid, 200, 300);
+        cmd = trim_clip_tail(p.active_sequence(), Track::Kind::Video, 0, vid, 200, 300);
         check(cmd != nullptr, "trim-linked: mate-constrained tail returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.video_tracks[0].clips[0].tl_out == 70 &&
-                  p.sequence.audio_tracks[0].clips[0].tl_out == 70,
+        check(p.active_sequence().video_tracks[0].clips[0].tl_out == 70 &&
+                  p.active_sequence().audio_tracks[0].clips[0].tl_out == 70,
               "trim-linked: pair tail clamps to the mate's neighbor");
-        check(p.sequence.video_tracks[0].clips[0].src_out == 70 &&
-                  p.sequence.audio_tracks[0].clips[0].src_out == 70,
+        check(p.active_sequence().video_tracks[0].clips[0].src_out == 70 &&
+                  p.active_sequence().audio_tracks[0].clips[0].src_out == 70,
               "trim-linked: pair src_out follows in lockstep");
 
         Clip head_limit;
@@ -1368,16 +1368,16 @@ int main() {
         head_limit.tl_in = 10;
         head_limit.src_in = 0;
         head_limit.src_out = 10;
-        cmd = place_clip(p.sequence, Track::Kind::Audio, 0, head_limit, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Audio, 0, head_limit, Placement::Overwrite);
         check(cmd != nullptr, "trim-linked: place head-limiting audio clip");
         undo.record(std::move(cmd));
-        cmd = trim_clip_head(p.sequence, Track::Kind::Video, 0, vid, -500, 300);
+        cmd = trim_clip_head(p.active_sequence(), Track::Kind::Video, 0, vid, -500, 300);
         check(cmd != nullptr, "trim-linked: mate-constrained head returns command");
         undo.record(std::move(cmd));
-        const Clip& mate = *p.sequence.audio_tracks[0].clip_with_id(
-            p.sequence.video_tracks[0].clips[0].linked_id);
-        check(p.sequence.video_tracks[0].clips[0].tl_in == 20 &&
-                  p.sequence.video_tracks[0].clips[0].src_in == 20 &&
+        const Clip& mate = *p.active_sequence().audio_tracks[0].clip_with_id(
+            p.active_sequence().video_tracks[0].clips[0].linked_id);
+        check(p.active_sequence().video_tracks[0].clips[0].tl_in == 20 &&
+                  p.active_sequence().video_tracks[0].clips[0].src_in == 20 &&
                   mate.tl_in == 20 && mate.src_in == 20,
               "trim-linked: pair head clamps to the audio mate's neighbor");
     }
@@ -1396,27 +1396,27 @@ int main() {
         b.tl_in = 30;
         b.src_in = 0;
         b.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "batch-move: place A");
         undo.record(std::move(cmd));
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, b, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, b, Placement::Overwrite);
         check(cmd != nullptr, "batch-move: place B");
         undo.record(std::move(cmd));
-        const ClipId ia = p.sequence.video_tracks[0].clips[0].id;
-        const ClipId ib = p.sequence.video_tracks[0].clips[1].id;
+        const ClipId ia = p.active_sequence().video_tracks[0].clips[0].id;
+        const ClipId ib = p.active_sequence().video_tracks[0].clips[1].id;
 
-        cmd = move_clips_batch(p.sequence, {{ia, Track::Kind::Video, 0, 40},
+        cmd = move_clips_batch(p.active_sequence(), {{ia, Track::Kind::Video, 0, 40},
                                             {ib, Track::Kind::Video, 0, 70}});
         check(cmd != nullptr, "batch-move: atomic move returns command");
         undo.record(std::move(cmd));
-        const Clip* ca = p.sequence.video_tracks[0].clip_with_id(ia);
-        const Clip* cb = p.sequence.video_tracks[0].clip_with_id(ib);
+        const Clip* ca = p.active_sequence().video_tracks[0].clip_with_id(ia);
+        const Clip* cb = p.active_sequence().video_tracks[0].clip_with_id(ib);
         check(ca && cb, "batch-move: both clips survive the commit");
         check(ca && ca->tl_in == 40 && ca->tl_out == 70 && ca->duration() == 30,
               "batch-move: A keeps its full size at the target");
         check(cb && cb->tl_in == 70 && cb->tl_out == 100 && cb->duration() == 30,
               "batch-move: B keeps its full size and spacing after A");
-        check(p.sequence.video_tracks[0].clips.size() == 2,
+        check(p.active_sequence().video_tracks[0].clips.size() == 2,
               "batch-move: no clip is lost or duplicated");
 
         Clip c;
@@ -1425,22 +1425,22 @@ int main() {
         c.tl_in = 130;
         c.src_in = 0;
         c.src_out = 90;
-        cmd = place_clip(p.sequence, Track::Kind::Video, 0, c, Placement::Overwrite);
+        cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, c, Placement::Overwrite);
         check(cmd != nullptr, "batch-move: place stationary C");
         undo.record(std::move(cmd));
         const ClipId ic = [&] {
-            for (const auto& cl : p.sequence.video_tracks[0].clips)
+            for (const auto& cl : p.active_sequence().video_tracks[0].clips)
                 if (cl.name == "BATH_C") return cl.id;
             return ClipId{0};
         }();
         check(ic != 0, "batch-move: C is on the timeline");
-        cmd = move_clips_batch(p.sequence, {{ia, Track::Kind::Video, 0, 120},
+        cmd = move_clips_batch(p.active_sequence(), {{ia, Track::Kind::Video, 0, 120},
                                             {ib, Track::Kind::Video, 0, 150}});
         check(cmd != nullptr, "batch-move: overlap-into-stationary returns command");
         undo.record(std::move(cmd));
-        const Clip* cc = p.sequence.video_tracks[0].clip_with_id(ic);
-        const Clip* ca2 = p.sequence.video_tracks[0].clip_with_id(ia);
-        const Clip* cb2 = p.sequence.video_tracks[0].clip_with_id(ib);
+        const Clip* cc = p.active_sequence().video_tracks[0].clip_with_id(ic);
+        const Clip* ca2 = p.active_sequence().video_tracks[0].clip_with_id(ia);
+        const Clip* cb2 = p.active_sequence().video_tracks[0].clip_with_id(ib);
         check(cc && cc->tl_in == 180 && cc->duration() == 40,
               "batch-move: stationary clip is trimmed only at the overwrite boundary");
         check(ca2 && cb2 && ca2->tl_in == 120 && ca2->duration() == 30 && cb2->duration() == 30,
@@ -1449,10 +1449,10 @@ int main() {
 
     {
         Project p;
-        p.sequence.fps = 30.0;
-        p.sequence.video_tracks.emplace_back(Track::Kind::Video, "V1");
-        p.sequence.audio_tracks.emplace_back(Track::Kind::Audio, "A1");
-        p.sequence.video_tracks.emplace_back(Track::Kind::Video, "V2");
+        p.active_sequence().fps = 30.0;
+        p.active_sequence().video_tracks.emplace_back(Track::Kind::Video, "V1");
+        p.active_sequence().audio_tracks.emplace_back(Track::Kind::Audio, "A1");
+        p.active_sequence().video_tracks.emplace_back(Track::Kind::Video, "V2");
 
         Clip vp;
         vp.media = 3;
@@ -1461,9 +1461,9 @@ int main() {
         vp.tl_out = 5000;
         vp.src_in = 0;
         vp.src_out = 4000;
-        p.sequence.next_clip_id = 900;
-        vp.id = p.sequence.next_clip_id++;
-        p.sequence.video_tracks[0].clips.push_back(vp);
+        p.active_sequence().next_clip_id = 900;
+        vp.id = p.active_sequence().next_clip_id++;
+        p.active_sequence().video_tracks[0].clips.push_back(vp);
 
         Clip ap;
         ap.media = 3;
@@ -1472,41 +1472,41 @@ int main() {
         ap.tl_out = 5000;
         ap.src_in = 0;
         ap.src_out = 4000;
-        ap.id = p.sequence.next_clip_id++;
-        p.sequence.audio_tracks[0].clips.push_back(ap);
+        ap.id = p.active_sequence().next_clip_id++;
+        p.active_sequence().audio_tracks[0].clips.push_back(ap);
 
         Clip vo;
         vo.media = 9;
         vo.name = "VES_VO";
         vo.tl_in = 1000;
         vo.tl_out = 5000;
-        vo.id = p.sequence.next_clip_id++;
-        p.sequence.audio_tracks[0].clips.push_back(vo);
+        vo.id = p.active_sequence().next_clip_id++;
+        p.active_sequence().audio_tracks[0].clips.push_back(vo);
 
         Clip dead;
         dead.media = 2;
         dead.name = "VES_V2";
         dead.tl_in = 1000;
         dead.tl_out = 5000;
-        dead.id = p.sequence.next_clip_id++;
-        p.sequence.video_tracks[1].clips.push_back(dead);
+        dead.id = p.active_sequence().next_clip_id++;
+        p.active_sequence().video_tracks[1].clips.push_back(dead);
 
-        auto cmd = blade_linked_at(p.sequence, Track::Kind::Video, 0, 2000);
+        auto cmd = blade_linked_at(p.active_sequence(), Track::Kind::Video, 0, 2000);
         check(cmd != nullptr, "sibling-blade: video blade returns a command");
-        check(p.sequence.video_tracks[0].clips.size() == 2, "sibling-blade: video splits in two");
-        check(p.sequence.audio_tracks[0].clips.size() == 3, "sibling-blade: audio clip count unchanged");
-        check(p.sequence.video_tracks[1].clips.size() == 1,
+        check(p.active_sequence().video_tracks[0].clips.size() == 2, "sibling-blade: video splits in two");
+        check(p.active_sequence().audio_tracks[0].clips.size() == 3, "sibling-blade: audio clip count unchanged");
+        check(p.active_sequence().video_tracks[1].clips.size() == 1,
               "sibling-blade: same-media clip on a different video track is NOT cut");
 
-        const Clip* vL = p.sequence.video_tracks[0].clip_with_id(vp.id);
+        const Clip* vL = p.active_sequence().video_tracks[0].clip_with_id(vp.id);
         const Clip* vR = [&] {
-            for (const auto& c : p.sequence.video_tracks[0].clips)
+            for (const auto& c : p.active_sequence().video_tracks[0].clips)
                 if (c.id != vp.id) return &c;
             return (const Clip*)nullptr;
         }();
-        const Clip* aL = p.sequence.audio_tracks[0].clip_with_id(ap.id);
+        const Clip* aL = p.active_sequence().audio_tracks[0].clip_with_id(ap.id);
         const Clip* aR = [&] {
-            for (const auto& c : p.sequence.audio_tracks[0].clips)
+            for (const auto& c : p.active_sequence().audio_tracks[0].clips)
                 if (c.id != ap.id && c.name == "AES_PAIR") return &c;
             return (const Clip*)nullptr;
         }();
@@ -1519,14 +1519,14 @@ int main() {
         check(vR->linked_id == aR->id && aR->linked_id == vR->id,
               "sibling-blade: right halves re-linked");
 
-        cmd->undo(p.sequence);
-        check(p.sequence.video_tracks[0].clips.size() == 1 &&
-                  p.sequence.audio_tracks[0].clips.size() == 2,
+        cmd->undo(p.active_sequence());
+        check(p.active_sequence().video_tracks[0].clips.size() == 1 &&
+                  p.active_sequence().audio_tracks[0].clips.size() == 2,
               "sibling-blade: undo restores the pre-cut state");
 
-        Track& at = p.sequence.audio_tracks[0];
+        Track& at = p.active_sequence().audio_tracks[0];
         at.locked = true;
-        cmd = blade_linked_at(p.sequence, Track::Kind::Video, 0, 3000);
+        cmd = blade_linked_at(p.active_sequence(), Track::Kind::Video, 0, 3000);
         check(cmd != nullptr, "sibling-blade: primary cut still lands on a locked A1");
         check(at.clip_with_id(ap.id) != nullptr && at.clips.size() == 2,
               "sibling-blade: locked audio sibling is not cut");
@@ -1540,10 +1540,10 @@ int main() {
         a.tl_in = 0;
         a.src_in = 0;
         a.src_out = 30;
-        auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+        auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
         check(cmd != nullptr, "grade: place video clip");
         undo.record(std::move(cmd));
-        const ClipId id = p.sequence.video_tracks[0].clips[0].id;
+        const ClipId id = p.active_sequence().video_tracks[0].clips[0].id;
 
         grade_graph::GradeGraph g;
         const int corr = g.add_node(grade_graph::NodeKind::kCorrector);
@@ -1553,20 +1553,20 @@ int main() {
         const int out_n = g.add_node(grade_graph::NodeKind::kOutput);
         check(g.add_rgb_edge(corr, out_n) >= 0, "grade: wire corrector -> output");
 
-        cmd = set_clip_grade(p.sequence, Track::Kind::Video, 0, id, g);
+        cmd = set_clip_grade(p.active_sequence(), Track::Kind::Video, 0, id, g);
         check(cmd != nullptr, "grade: set_clip_grade returns command");
         undo.record(std::move(cmd));
-        const Clip& gc0 = p.sequence.video_tracks[0].clips[0];
+        const Clip& gc0 = p.active_sequence().video_tracks[0].clips[0];
         check(gc0.has_grade(), "grade: clip reports a grade");
         check(gc0.grade.num_nodes() == 2 && gc0.grade.edges().size() == 1,
               "grade: clip carries the full node tree");
 
-        check(undo.undo(p.sequence), "grade: undo");
-        check(!p.sequence.video_tracks[0].clips[0].has_grade(),
+        check(undo.undo(p.active_sequence()), "grade: undo");
+        check(!p.active_sequence().video_tracks[0].clips[0].has_grade(),
               "grade: undo restores the no-grade default");
-        check(undo.redo(p.sequence), "grade: redo");
-        check(p.sequence.video_tracks[0].clips[0].has_grade() &&
-                  p.sequence.video_tracks[0].clips[0].grade.num_nodes() == 2,
+        check(undo.redo(p.active_sequence()), "grade: redo");
+        check(p.active_sequence().video_tracks[0].clips[0].has_grade() &&
+                  p.active_sequence().video_tracks[0].clips[0].grade.num_nodes() == 2,
               "grade: redo restores the tree");
 
         std::string err;
@@ -1575,7 +1575,7 @@ int main() {
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/grade.ehproj", &err),
               "grade: load project");
-        const Clip& lc = loaded.sequence.video_tracks[0].clips[0];
+        const Clip& lc = loaded.active_sequence().video_tracks[0].clips[0];
         check(lc.has_grade() && lc.grade.num_nodes() == 2 && lc.grade.edges().size() == 1,
               "grade: tree survives save/load");
         bool gain_ok = false;
@@ -1631,10 +1631,10 @@ int main() {
         }
         Project legacy;
         check(load_project(legacy, v3path, &err), "grade: legacy v3 project loads");
-        check(legacy.sequence.video_tracks.size() == 1 &&
-                  legacy.sequence.video_tracks[0].clips.size() == 1,
+        check(legacy.active_sequence().video_tracks.size() == 1 &&
+                  legacy.active_sequence().video_tracks[0].clips.size() == 1,
               "grade: legacy clip present");
-        check(!legacy.sequence.video_tracks[0].clips[0].has_grade(),
+        check(!legacy.active_sequence().video_tracks[0].clips[0].has_grade(),
               "grade: legacy clip has no grade");
         check(save_project(legacy, "/tmp/opencode/media/legacy_v3_resaved.ehproj", &err),
               "grade: legacy project re-saves");
@@ -1652,18 +1652,18 @@ int main() {
         v.tl_in = 0;
         v.src_in = 0;
         v.src_out = 30;
-        cmd = place_clip(lp.sequence, Track::Kind::Video, 0, v, Placement::Overwrite);
+        cmd = place_clip(lp.active_sequence(), Track::Kind::Video, 0, v, Placement::Overwrite);
         undo.record(std::move(cmd));
         Clip au = v;
         au.media = 0;
-        cmd = place_clip(lp.sequence, Track::Kind::Audio, 0, au, Placement::Overwrite);
+        cmd = place_clip(lp.active_sequence(), Track::Kind::Audio, 0, au, Placement::Overwrite);
         undo.record(std::move(cmd));
-        const ClipId vid = lp.sequence.video_tracks[0].clips[0].id;
-        cmd = link_clip(lp.sequence, Track::Kind::Video, 0, vid);
+        const ClipId vid = lp.active_sequence().video_tracks[0].clips[0].id;
+        cmd = link_clip(lp.active_sequence(), Track::Kind::Video, 0, vid);
         undo.record(std::move(cmd));
-        cmd = set_clip_grade(lp.sequence, Track::Kind::Video, 0, vid, g);
+        cmd = set_clip_grade(lp.active_sequence(), Track::Kind::Video, 0, vid, g);
         check(cmd != nullptr, "grade: set on linked video returns command");
-        check(lp.sequence.audio_tracks[0].clips[0].grade.num_nodes() == 2,
+        check(lp.active_sequence().audio_tracks[0].clips[0].grade.num_nodes() == 2,
               "grade: linked audio mate inherits the grade");
     }
 
@@ -1675,9 +1675,9 @@ int main() {
         tv.tl_in = 0;
         tv.src_in = 0;
         tv.src_out = 30;
-        cmd = place_clip(tp.sequence, Track::Kind::Video, 0, tv, Placement::Overwrite);
+        cmd = place_clip(tp.active_sequence(), Track::Kind::Video, 0, tv, Placement::Overwrite);
         undo.record(std::move(cmd));
-        const ClipId tid = tp.sequence.video_tracks[0].clips[0].id;
+        const ClipId tid = tp.active_sequence().video_tracks[0].clips[0].id;
 
         Clip::Title want;
         want.text = "Hello";
@@ -1706,29 +1706,29 @@ int main() {
         want.box_r = 0.0f;
         want.box_g = 0.5f;
         want.box_b = 0.5f;
-        cmd = set_clip_title(tp.sequence, Track::Kind::Video, 0, tid, want);
+        cmd = set_clip_title(tp.active_sequence(), Track::Kind::Video, 0, tid, want);
         check(cmd != nullptr, "title: set returns command");
         undo.record(std::move(cmd));
-        check(tp.sequence.video_tracks[0].clips[0].has_title(),
+        check(tp.active_sequence().video_tracks[0].clips[0].has_title(),
               "title: has_title after set");
 
         Clip::Title huge = want;
         huge.size = 9.9f;
-        cmd = set_clip_title(tp.sequence, Track::Kind::Video, 0, tid, huge);
+        cmd = set_clip_title(tp.active_sequence(), Track::Kind::Video, 0, tid, huge);
         check(cmd != nullptr, "title: clamped set still returns command");
         undo.record(std::move(cmd));
-        check(tp.sequence.video_tracks[0].clips[0].title.size == title::kSizeMax,
+        check(tp.active_sequence().video_tracks[0].clips[0].title.size == title::kSizeMax,
               "title: size clamps to max");
-        check(tp.sequence.video_tracks[0].clips[0].title.text == want.text,
+        check(tp.active_sequence().video_tracks[0].clips[0].title.text == want.text,
               "title: text untouched by clamp");
 
-        check(undo.undo(tp.sequence), "title: undo step");
-        check(tp.sequence.video_tracks[0].clips[0].title.text == want.text &&
-                  tp.sequence.video_tracks[0].clips[0].title.size == want.size,
+        check(undo.undo(tp.active_sequence()), "title: undo step");
+        check(tp.active_sequence().video_tracks[0].clips[0].title.text == want.text &&
+                  tp.active_sequence().video_tracks[0].clips[0].title.size == want.size,
               "title: undo restores the pre-clamp title");
-        check(undo.undo(tp.sequence) && !tp.sequence.video_tracks[0].clips[0].has_title(),
+        check(undo.undo(tp.active_sequence()) && !tp.active_sequence().video_tracks[0].clips[0].has_title(),
               "title: undo clears the title");
-        check(undo.redo(tp.sequence) && tp.sequence.video_tracks[0].clips[0].has_title(),
+        check(undo.redo(tp.active_sequence()) && tp.active_sequence().video_tracks[0].clips[0].has_title(),
               "title: redo restores the title");
 
         std::string terr;
@@ -1737,7 +1737,7 @@ int main() {
         Project tloaded;
         check(load_project(tloaded, "/tmp/opencode/media/title.ehproj", &terr),
               "title: load project");
-        const Clip& tlc = tloaded.sequence.video_tracks[0].clips[0];
+        const Clip& tlc = tloaded.active_sequence().video_tracks[0].clips[0];
         check(tlc.has_title() && tlc.title.text == want.text && tlc.title.size == want.size &&
                   tlc.title.r == want.r && tlc.title.g == want.g && tlc.title.b == want.b &&
                   tlc.title.a == want.a && tlc.title.font_family == want.font_family &&
@@ -1779,35 +1779,35 @@ int main() {
         g2.src_out = 60;
         gv1.clips.push_back(g1);
         gv1.clips.push_back(g2);
-        gp.sequence.video_tracks.push_back(std::move(gv1));
+        gp.active_sequence().video_tracks.push_back(std::move(gv1));
         UndoStack gundo;
 
         std::vector<std::unique_ptr<ICommand>> children;
         Clip::Title gtitle;
         gtitle.text = "hello";
         gtitle.size = 0.12f;
-        children.push_back(set_clip_title(gp.sequence, Track::Kind::Video, 0, 1, gtitle));
-        children.push_back(set_clip_transform(gp.sequence, Track::Kind::Video, 0, 2, 1.0, 1.0,
+        children.push_back(set_clip_title(gp.active_sequence(), Track::Kind::Video, 0, 1, gtitle));
+        children.push_back(set_clip_transform(gp.active_sequence(), Track::Kind::Video, 0, 2, 1.0, 1.0,
                                               120.0, -60.0, 0.0, 0.0, 0.0, false, false));
         auto group = std::make_unique<GroupCommand>("Bulk Captions", std::move(children));
         check(group != nullptr && !group->name().empty(), "group: constructed with its name");
         gundo.record(std::move(group));
-        check(gp.sequence.video_tracks[0].clips[0].title.text == "hello",
+        check(gp.active_sequence().video_tracks[0].clips[0].title.text == "hello",
               "group: redo applies child 1 (title)");
-        check(gp.sequence.video_tracks[0].clips[1].pos_x == 120.0 &&
-                  gp.sequence.video_tracks[0].clips[1].pos_y == -60.0,
+        check(gp.active_sequence().video_tracks[0].clips[1].pos_x == 120.0 &&
+                  gp.active_sequence().video_tracks[0].clips[1].pos_y == -60.0,
               "group: redo applies child 2 (transform)");
 
-        check(gundo.undo(gp.sequence), "group: one undo reverts the whole batch");
-        check(!gp.sequence.video_tracks[0].clips[0].has_title(),
+        check(gundo.undo(gp.active_sequence()), "group: one undo reverts the whole batch");
+        check(!gp.active_sequence().video_tracks[0].clips[0].has_title(),
               "group: undo restores child 1 (title cleared)");
-        check(gp.sequence.video_tracks[0].clips[1].pos_x == 0.0 &&
-                  gp.sequence.video_tracks[0].clips[1].pos_y == 0.0,
+        check(gp.active_sequence().video_tracks[0].clips[1].pos_x == 0.0 &&
+                  gp.active_sequence().video_tracks[0].clips[1].pos_y == 0.0,
               "group: undo restores child 2 (transform reverted)");
 
-        check(gundo.redo(gp.sequence), "group: redo restores the whole batch");
-        check(gp.sequence.video_tracks[0].clips[0].title.text == "hello" &&
-                  gp.sequence.video_tracks[0].clips[1].pos_x == 120.0,
+        check(gundo.redo(gp.active_sequence()), "group: redo restores the whole batch");
+        check(gp.active_sequence().video_tracks[0].clips[0].title.text == "hello" &&
+                  gp.active_sequence().video_tracks[0].clips[1].pos_x == 120.0,
               "group: redo restores both children");
     }
 
@@ -1830,14 +1830,14 @@ int main() {
         c.eq_bands[0].gain = std::nan("");
         c.eq_bands[0].enabled = true;
         v1.clips.push_back(std::move(c));
-        tp.sequence.video_tracks.push_back(std::move(v1));
+        tp.active_sequence().video_tracks.push_back(std::move(v1));
         std::string err;
         check(save_project(tp, "/tmp/opencode/media/utf8_repair.ncs", &err),
               "utf8: save with invalid bytes succeeds");
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/utf8_repair.ncs", &err),
               "utf8: repaired project loads");
-        const Clip& lc = loaded.sequence.video_tracks[0].clips[0];
+        const Clip& lc = loaded.active_sequence().video_tracks[0].clips[0];
         check(lc.comments == "label\xEF\xBF\xBD\xEF\xBF\xBD",
               "utf8: comments repaired to U+FFFD");
         check(std::isfinite(lc.eq_bands[0].gain),

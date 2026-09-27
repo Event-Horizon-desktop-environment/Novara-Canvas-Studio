@@ -40,11 +40,11 @@ void check_video_audio_project() {
     CHECK(proj != nullptr);
     CHECK(proj->media.size() == 1);
     CHECK(proj->media[0].id == 3);
-    CHECK(proj->sequence.video_tracks.size() == 1);
-    CHECK(proj->sequence.audio_tracks.size() == 1);
-    CHECK(proj->sequence.fps == 25.0);
+    CHECK(proj->active_sequence().video_tracks.size() == 1);
+    CHECK(proj->active_sequence().audio_tracks.size() == 1);
+    CHECK(proj->active_sequence().fps == 25.0);
 
-    const Track& vt = proj->sequence.video_tracks[0];
+    const Track& vt = proj->active_sequence().video_tracks[0];
     CHECK(vt.kind == Track::Kind::Video);
     CHECK(vt.clips.size() == 1);
     const Clip& clip = vt.clips[0];
@@ -55,7 +55,7 @@ void check_video_audio_project() {
     CHECK(clip.src_out == 2500);
     CHECK(clip.linked_id != 0);
 
-    const Track& at = proj->sequence.audio_tracks[0];
+    const Track& at = proj->active_sequence().audio_tracks[0];
     CHECK(at.kind == Track::Kind::Audio);
     CHECK(at.clips.size() == 1);
     const Clip& aclip = at.clips[0];
@@ -64,9 +64,9 @@ void check_video_audio_project() {
     CHECK(aclip.tl_out == 2500);
     CHECK(aclip.linked_id == clip.id);
 
-    CHECK(proj->sequence.duration_frames() == 2500);
+    CHECK(proj->active_sequence().duration_frames() == 2500);
 
-    CHECK(proj->sequence.next_clip_id > clip.id);
+    CHECK(proj->active_sequence().next_clip_id > clip.id);
 }
 
 void check_video_only_ignores_audio_when_absent() {
@@ -81,11 +81,11 @@ void check_video_only_ignores_audio_when_absent() {
 
     const auto proj = build_source_project(media, 24.0);
     CHECK(proj != nullptr);
-    CHECK(proj->sequence.video_tracks.size() == 1);
-    CHECK(proj->sequence.audio_tracks.empty());
-    CHECK(proj->sequence.fps == 24.0);
-    CHECK(proj->sequence.video_tracks[0].clips.size() == 1);
-    CHECK(proj->sequence.video_tracks[0].clips[0].tl_out == 500);
+    CHECK(proj->active_sequence().video_tracks.size() == 1);
+    CHECK(proj->active_sequence().audio_tracks.empty());
+    CHECK(proj->active_sequence().fps == 24.0);
+    CHECK(proj->active_sequence().video_tracks[0].clips.size() == 1);
+    CHECK(proj->active_sequence().video_tracks[0].clips[0].tl_out == 500);
 }
 
 void check_audio_only_has_no_video_track() {
@@ -100,10 +100,10 @@ void check_audio_only_has_no_video_track() {
 
     const auto proj = build_source_project(media, 0.0);
     CHECK(proj != nullptr);
-    CHECK(proj->sequence.video_tracks.empty());
-    CHECK(proj->sequence.audio_tracks.size() == 1);
-    CHECK(proj->sequence.fps == 48.0);
-    const Clip& clip = proj->sequence.audio_tracks[0].clips[0];
+    CHECK(proj->active_sequence().video_tracks.empty());
+    CHECK(proj->active_sequence().audio_tracks.size() == 1);
+    CHECK(proj->active_sequence().fps == 48.0);
+    const Clip& clip = proj->active_sequence().audio_tracks[0].clips[0];
     CHECK(clip.tl_out == 4800);
     CHECK(clip.linked_id == 0);
 }
@@ -119,8 +119,8 @@ void check_degenerate_and_truncated_frames() {
 
     const auto proj = build_source_project(media, 0.0);
     CHECK(proj != nullptr);
-    CHECK(proj->sequence.fps == 30.0);
-    const Clip& clip = proj->sequence.video_tracks[0].clips[0];
+    CHECK(proj->active_sequence().fps == 30.0);
+    const Clip& clip = proj->active_sequence().video_tracks[0].clips[0];
     CHECK(clip.tl_out == 1);
     CHECK(clip.src_out == 1);
 
@@ -165,10 +165,10 @@ void check_next_clip_id_respected() {
 
     const auto proj = build_source_project(media, 0.0);
     CHECK(proj != nullptr);
-    const Clip& clip = proj->sequence.video_tracks[0].clips[0];
-    const Clip& aclip = proj->sequence.audio_tracks[0].clips[0];
+    const Clip& clip = proj->active_sequence().video_tracks[0].clips[0];
+    const Clip& aclip = proj->active_sequence().audio_tracks[0].clips[0];
     CHECK(clip.id != aclip.id);
-    CHECK(std::max(clip.id, aclip.id) < proj->sequence.next_clip_id);
+    CHECK(std::max(clip.id, aclip.id) < proj->active_sequence().next_clip_id);
 }
 
 }

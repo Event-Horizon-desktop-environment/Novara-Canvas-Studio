@@ -198,6 +198,19 @@ std::string video_encoder_name(VideoCodec codec, EncoderBackend backend,
     return "libx264";
 }
 
+std::string audio_encoder_name(const std::string& codec) {
+    const std::string c = lower(codec);
+    if (c == "pcm") return "pcm_s16le";
+    if (c == "mp3") return "libmp3lame";
+    if (c == "aac" || c == "flac" || c == "alac" || c == "opus" || c == "libopus" ||
+        c == "vorbis" || c == "libvorbis" || c == "libmp3lame" || c == "libshine")
+        return c;
+    if (c == "ac-3" || c == "ac3") return "ac3";
+    if (c == "e-ac-3" || c == "eac3") return "eac3";
+    if (c.rfind("pcm_", 0) == 0) return c;
+    return c;
+}
+
 ExportSettings to_export_settings(const DeliverSettings& ds) {
     ExportSettings es;
 
@@ -207,7 +220,7 @@ ExportSettings to_export_settings(const DeliverSettings& ds) {
     (void)was_hw;
 
     es.format = container_format_name(ds.video.format);
-    es.audio_codec = ds.audio.export_audio ? lower(ds.audio.codec) : "";
+    es.audio_codec = ds.audio.export_audio ? audio_encoder_name(ds.audio.codec) : "";
     es.audio_bitrate_kbps = ds.audio.bitrate_kbps;
     es.audio_sample_rate = ds.audio.sample_rate;
     es.audio_channels = ds.audio.channels;
@@ -295,7 +308,7 @@ std::vector<std::string> deliver_video_codecs() {
 }
 
 std::vector<std::string> deliver_audio_codecs() {
-    return {"AAC", "MP3", "PCM", "FLAC", "Opus", "Vorbis"};
+    return {"AAC", "MP3", "PCM", "FLAC", "ALAC", "AC-3", "E-AC-3", "Opus", "Vorbis"};
 }
 
 std::vector<std::string> deliver_encoders() {

@@ -64,7 +64,7 @@ bool write_test_wav(const char* path) {
 Project make_project() {
     Project p;
     p.name = "AvReanchorTest";
-    p.sequence.fps = kFps;
+    p.active_sequence().fps = kFps;
 
     MediaEntry m0;
     m0.id = 0;
@@ -89,7 +89,7 @@ Project make_project() {
     c.src_out = 180;
     c.enabled = true;
     a1.clips.push_back(c);
-    p.sequence.audio_tracks.push_back(std::move(a1));
+    p.active_sequence().audio_tracks.push_back(std::move(a1));
     return p;
 }
 

@@ -611,7 +611,7 @@ void update_inspector_audio_full(MainWindow& mw) {
     AudioControls* ac = audio_lookup(mw);
     if (!ac || !ac->volume || !mw.project_) return;
 
-    const auto targets = resolve_audio_targets(mw.project_->sequence, mw.selected_clip_ids_);
+    const auto targets = resolve_audio_targets(mw.project_->active_sequence(), mw.selected_clip_ids_);
     const bool has_audio = !targets.empty();
 
     if (has_audio) populate_from_clip(*ac, targets.front().clip);
@@ -668,9 +668,9 @@ void apply_inspector_audio_processing(MainWindow& mw) {
     if (same) return;
 
     auto cmd = canvas::core::set_clip_audio_processing(
-        mw.project_->sequence, kind, index, clip.id, semi, cents, speed, speed_on, eq_on, bands);
+        mw.project_->active_sequence(), kind, index, clip.id, semi, cents, speed, speed_on, eq_on, bands);
     if (!cmd) return;
-    mw.undo_.record(std::move(cmd));
+    mw.active_undo().record(std::move(cmd));
     mw.has_unsaved_changes_ = true;
     mw.refresh_timeline();
     mw.push_audio_mix_snapshot();
@@ -694,10 +694,10 @@ void apply_inspector_voice_isolation(MainWindow& mw) {
     if (!canvas::core::voice_isolation_supported(mode)) return;
     if (clip.voice_isolation == mode) return;
 
-    auto cmd = canvas::core::set_clip_voice_isolation(mw.project_->sequence, kind, index,
+    auto cmd = canvas::core::set_clip_voice_isolation(mw.project_->active_sequence(), kind, index,
                                                       clip.id, mode);
     if (!cmd) return;
-    mw.undo_.record(std::move(cmd));
+    mw.active_undo().record(std::move(cmd));
     mw.has_unsaved_changes_ = true;
     mw.refresh_timeline();
     mw.push_audio_mix_snapshot();

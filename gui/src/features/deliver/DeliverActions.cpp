@@ -90,7 +90,7 @@ void MainWindow::add_current_to_render_queue() {
 
     if (ds.video.resolution == "Timeline Resolution") {
         int w = 0, h = 0;
-        for (const auto& track : project_->sequence.video_tracks) {
+        for (const auto& track : project_->active_sequence().video_tracks) {
             for (const auto& clip : track.clips) {
                 if (!clip.enabled) continue;
                 if (const canvas::core::MediaEntry* m = project_->media_by_id(clip.media)) {
@@ -105,14 +105,14 @@ void MainWindow::add_current_to_render_queue() {
     }
     if (ds.video.frame_rate == "Auto") {
         double f = 0.0;
-        for (const auto& track : project_->sequence.video_tracks) {
+        for (const auto& track : project_->active_sequence().video_tracks) {
             for (const auto& clip : track.clips) {
                 if (!clip.enabled) continue;
                 if (const canvas::core::MediaEntry* m = project_->media_by_id(clip.media))
                     f = std::max(f, m->fps);
             }
         }
-        if (f <= 0.0) f = project_->sequence.fps;
+        if (f <= 0.0) f = project_->active_sequence().fps;
         if (f <= 0.0) f = 30.0;
         ds.video.custom_fps = f;
         {
@@ -143,7 +143,7 @@ void MainWindow::add_current_to_render_queue() {
 
     if (ds.render_scope == canvas::core::RenderScope::IndividualClips) {
         int index = 0;
-        for (const auto& track : project_->sequence.video_tracks) {
+        for (const auto& track : project_->active_sequence().video_tracks) {
             for (const auto& clip : track.clips) {
                 if (!clip.enabled || clip.media < 0) continue;
                 canvas::core::RenderJob job;
@@ -192,9 +192,9 @@ void MainWindow::add_current_to_render_queue() {
                 tr("Range export queued: %1 frame(s) from %2 → %3")
                     .arg(range.count)
                     .arg(timecode(range.start,
-                                  project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0))
+                                  project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0))
                     .arg(timecode(range.start + range.count,
-                                  project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0)));
+                                  project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0)));
     } else
         status_->showMessage(tr("Added render job(s) to the queue."));
 }
@@ -230,7 +230,7 @@ void MainWindow::export_edl() {
     if (path.isEmpty()) return;
 
     const std::string text =
-        canvas::core::edl::write_cmx3600(project_->sequence, project_->name, project_->media);
+        canvas::core::edl::write_cmx3600(project_->active_sequence(), project_->name, project_->media);
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {

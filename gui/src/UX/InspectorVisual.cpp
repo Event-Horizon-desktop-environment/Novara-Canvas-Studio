@@ -315,9 +315,9 @@ void apply_inspector_visual(MainWindow& mw, unsigned parts) {
                           clip.flip_h == fh && clip.flip_v == fv;
         if (!same) {
             auto cmd = canvas::core::set_clip_transform(
-                mw.project_->sequence, kind, index, clip.id, sx, sy, px, py, rot, ax, ay, fh, fv);
+                mw.project_->active_sequence(), kind, index, clip.id, sx, sy, px, py, rot, ax, ay, fh, fv);
             if (cmd) {
-                mw.undo_.record(std::move(cmd));
+                mw.active_undo().record(std::move(cmd));
                 mw.has_unsaved_changes_ = true;
                 mw.refresh_timeline();
                 mw.push_snapshot();
@@ -343,9 +343,9 @@ void apply_inspector_visual(MainWindow& mw, unsigned parts) {
         const bool same = clip.opacity == opacity && clip.blend_mode == blend;
         if (!same) {
             auto cmd = canvas::core::set_clip_composite(
-                mw.project_->sequence, kind, index, clip.id, opacity, blend);
+                mw.project_->active_sequence(), kind, index, clip.id, opacity, blend);
             if (cmd) {
-                mw.undo_.record(std::move(cmd));
+                mw.active_undo().record(std::move(cmd));
                 mw.has_unsaved_changes_ = true;
                 mw.refresh_timeline();
                 mw.push_snapshot();
@@ -376,9 +376,9 @@ void apply_inspector_visual(MainWindow& mw, unsigned parts) {
         }
         const bool same = clip.title == t;
         if (!same) {
-            auto cmd = canvas::core::set_clip_title(mw.project_->sequence, kind, index, clip.id, t);
+            auto cmd = canvas::core::set_clip_title(mw.project_->active_sequence(), kind, index, clip.id, t);
             if (cmd) {
-                mw.undo_.record(std::move(cmd));
+                mw.active_undo().record(std::move(cmd));
                 mw.has_unsaved_changes_ = true;
                 mw.refresh_timeline();
                 mw.push_snapshot();

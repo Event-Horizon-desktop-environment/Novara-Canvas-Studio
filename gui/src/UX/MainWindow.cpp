@@ -226,9 +226,9 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::refresh_timeline() {
-    fps_ = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
-    timeline_->set_sequence(&project_->sequence);
-    total_frames_ = project_->sequence.duration_frames();
+    fps_ = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
+    timeline_->set_sequence(&project_->active_sequence());
+    total_frames_ = project_->active_sequence().duration_frames();
     scrub_->setRange(0, static_cast<int>(std::max<int64_t>(total_frames_ - 1, 0)));
     if (deliver_settings_) {
         const double secs = total_frames_ > 0 && fps_ > 0.0
@@ -246,12 +246,12 @@ void MainWindow::push_snapshot(const int64_t initial_frame) {
     qDebug().nospace()
         << "[proj] snapshot push anchor=" << initial_frame
         << " copy_ms=" << QString::number(copy_ms, 'f', 1)
-        << " undo_depth=" << undo_.count()
-        << " last_cmd=" << (undo_.can_undo() ? QString::fromStdString(undo_.next_undo_name()) : QStringLiteral("-"))
+        << " undo_depth=" << active_undo().count()
+        << " last_cmd=" << (active_undo().can_undo() ? QString::fromStdString(active_undo().next_undo_name()) : QStringLiteral("-"))
         << " media=" << project_->media.size()
-        << " v_tracks=" << project_->sequence.video_tracks.size()
-        << " a_tracks=" << project_->sequence.audio_tracks.size()
-        << " frames=" << project_->sequence.duration_frames();
+        << " v_tracks=" << project_->active_sequence().video_tracks.size()
+        << " a_tracks=" << project_->active_sequence().audio_tracks.size()
+        << " frames=" << project_->active_sequence().duration_frames();
     controller_.set_project(std::move(snapshot), initial_frame);
 }
 
@@ -275,7 +275,7 @@ void MainWindow::push_live_snapshot() {
 
 void MainWindow::open_source_preview(const canvas::core::MediaEntry& media) {
     const bool same_media = src_preview_.has_media() && src_preview_.media_path() == media.path;
-    src_preview_.open_media(media, project_ ? project_->sequence.fps : 30.0);
+    src_preview_.open_media(media, project_ ? project_->active_sequence().fps : 30.0);
     if (!same_media) {
         src_mark_in_ = -1;
         src_mark_out_ = -1;
@@ -315,7 +315,7 @@ void MainWindow::on_playback_changed(const bool playing) {
 void MainWindow::update_fps_label() {
     nominal_fps_ = 0.0;
     if (!project_) return;
-    const auto& seq = project_->sequence;
+    const auto& seq = project_->active_sequence();
     for (std::size_t i = seq.video_tracks.size(); i-- > 0;) {
         const auto& track = seq.video_tracks[i];
         if (track.locked) continue;

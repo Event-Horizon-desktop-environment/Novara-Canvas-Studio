@@ -35,7 +35,7 @@ bool all_finite(const float* v, int n) {
 Project make_project() {
     Project p;
     p.name = "VoiceIsolation";
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
 
     MediaEntry m0;
     m0.id = 0;
@@ -52,8 +52,8 @@ Project make_project() {
     Track a1;
     a1.kind = Track::Kind::Audio;
     a1.name = "A1";
-    p.sequence.video_tracks.push_back(std::move(v1));
-    p.sequence.audio_tracks.push_back(std::move(a1));
+    p.active_sequence().video_tracks.push_back(std::move(v1));
+    p.active_sequence().audio_tracks.push_back(std::move(a1));
     return p;
 }
 
@@ -134,35 +134,35 @@ void test_edit_op_and_roundtrip() {
         v.src_out = 60;
         Clip a = v;
         a.name = "A";
-        auto cmd = place_linked_clip(p.sequence, 0, 0, v, a, Placement::Overwrite);
+        auto cmd = place_linked_clip(p.active_sequence(), 0, 0, v, a, Placement::Overwrite);
         check(cmd != nullptr, "vi: place linked pair");
         undo.record(std::move(cmd));
 
-        const auto& vc = p.sequence.video_tracks[0].clips[0];
-        const auto& ac = p.sequence.audio_tracks[0].clips[0];
+        const auto& vc = p.active_sequence().video_tracks[0].clips[0];
+        const auto& ac = p.active_sequence().audio_tracks[0].clips[0];
         check(vc.voice_isolation == VoiceIsolationMode::None &&
               ac.voice_isolation == VoiceIsolationMode::None,
               "vi: default is None");
         check(vc.is_linked() && ac.is_linked(), "vi: pair is linked");
 
-        cmd = set_clip_voice_isolation(p.sequence, Track::Kind::Audio, 0, ac.id,
+        cmd = set_clip_voice_isolation(p.active_sequence(), Track::Kind::Audio, 0, ac.id,
                                        VoiceIsolationMode::RnNoise);
         check(cmd != nullptr, "vi: set_clip_voice_isolation returns command");
         undo.record(std::move(cmd));
-        check(p.sequence.audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise &&
-              p.sequence.video_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise,
+        check(p.active_sequence().audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise &&
+              p.active_sequence().video_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise,
               "vi: linked mate inherits the mode");
 
-        cmd = set_clip_voice_isolation(p.sequence, Track::Kind::Video, 0, 9999,
+        cmd = set_clip_voice_isolation(p.active_sequence(), Track::Kind::Video, 0, 9999,
                                        VoiceIsolationMode::RnNoise);
         check(cmd == nullptr, "vi: unknown clip returns nullptr");
 
-        check(undo.undo(p.sequence), "vi: undo isolation");
-        check(p.sequence.audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::None &&
-              p.sequence.video_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::None,
+        check(undo.undo(p.active_sequence()), "vi: undo isolation");
+        check(p.active_sequence().audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::None &&
+              p.active_sequence().video_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::None,
               "vi: undo restored None");
-        check(undo.redo(p.sequence), "vi: redo isolation");
-        check(p.sequence.audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise,
+        check(undo.redo(p.active_sequence()), "vi: redo isolation");
+        check(p.active_sequence().audio_tracks[0].clips[0].voice_isolation == VoiceIsolationMode::RnNoise,
               "vi: redo re-applied the mode");
 
         check(save_project(p, "/tmp/opencode/media/voice_isolation.ehproj") == true,
@@ -170,7 +170,7 @@ void test_edit_op_and_roundtrip() {
         Project loaded;
         check(load_project(loaded, "/tmp/opencode/media/voice_isolation.ehproj") == true,
               "vi: load project");
-        const auto& lc = loaded.sequence.audio_tracks[0].clips[0];
+        const auto& lc = loaded.active_sequence().audio_tracks[0].clips[0];
         check(lc.voice_isolation == VoiceIsolationMode::RnNoise,
               "vi: project round-trip preserves the mode");
     }

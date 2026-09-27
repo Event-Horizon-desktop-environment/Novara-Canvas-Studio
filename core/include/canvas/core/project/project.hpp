@@ -23,7 +23,8 @@ struct MediaEntry {
 struct Project {
     std::string name = "Untitled Project";
     std::string media_root;
-    Sequence sequence;
+    std::vector<Sequence> timelines;
+    std::size_t active_timeline = 0;
     std::vector<MediaEntry> media;
     std::vector<std::string> bins;
 
@@ -31,6 +32,8 @@ struct Project {
     std::vector<RenderJobSnapshot> render_jobs;
 
     [[nodiscard]] const MediaEntry* media_by_id(MediaId id) const noexcept;
+    [[nodiscard]] Sequence& active_sequence();
+    [[nodiscard]] const Sequence& active_sequence() const;
 };
 
 bool save_project(const Project& project, const std::string& path, std::string* error = nullptr);

@@ -18,12 +18,14 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/dict.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
 #include <libswscale/swscale.h>
 }
 
@@ -31,6 +33,7 @@ extern "C" {
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -107,6 +110,198 @@ bool is_hw_codec(const std::string& codec) {
 bool is_hw_pix_fmt(AVPixelFormat f) {
     return f == AV_PIX_FMT_CUDA || f == AV_PIX_FMT_VAAPI || f == AV_PIX_FMT_QSV ||
            f == AV_PIX_FMT_DRM_PRIME || f == AV_PIX_FMT_D3D11;
+}
+
+std::string resolve_audio_encoder_name(const std::string& in) {
+    std::string c;
+    c.reserve(in.size());
+    for (char ch : in)
+        c += static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (c == "pcm") return "pcm_s16le";
+    if (c == "mp3") return "libmp3lame";
+    return c;
+}
+
+const AVCodec* find_audio_encoder(const std::string& resolved) {
+    if (const AVCodec* c = avcodec_find_encoder_by_name(resolved.c_str())) return c;
+    if (resolved == "libmp3lame")
+        return avcodec_find_encoder_by_name("libshine");
+    if (resolved == "opus") return avcodec_find_encoder_by_name("libopus");
+    if (resolved == "libopus") return avcodec_find_encoder_by_name("opus");
+    if (resolved == "vorbis") return avcodec_find_encoder_by_name("libvorbis");
+    if (resolved == "libvorbis") return avcodec_find_encoder_by_name("vorbis");
+    return nullptr;
+}
+
+bool audio_encoder_is_lossless(const std::string& encoder_name) {
+    return encoder_name.rfind("pcm_", 0) == 0 || encoder_name == "flac" ||
+           encoder_name == "alac";
+}
+
+AVSampleFormat pick_audio_sample_fmt(const AVCodec* acodec) {
+    const void* configs = nullptr;
+    int nb = 0;
+    if (avcodec_get_supported_config(nullptr, acodec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
+                                     &configs, &nb) != 0 ||
+        !configs || nb <= 0)
+        return AV_SAMPLE_FMT_FLTP;
+    const auto* fmts = static_cast<const AVSampleFormat*>(configs);
+    const AVSampleFormat kPref[] = {
+        AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_S32P, AV_SAMPLE_FMT_S32,
+        AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S64P, AV_SAMPLE_FMT_S64,
+        AV_SAMPLE_FMT_DBLP, AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_U8P, AV_SAMPLE_FMT_U8,
+    };
+    for (AVSampleFormat want : kPref)
+        for (int i = 0; i < nb; ++i)
+            if (fmts[i] == want) return want;
+    return fmts[0];
+}
+
+bool audio_sample_rate_supported(const AVCodec* acodec, int rate) {
+    const void* configs = nullptr;
+    int nb = 0;
+    if (avcodec_get_supported_config(nullptr, acodec, AV_CODEC_CONFIG_SAMPLE_RATE, 0,
+                                     &configs, &nb) != 0 ||
+        !configs || nb <= 0)
+        return true;
+    const auto* rates = static_cast<const int*>(configs);
+    for (int i = 0; i < nb; ++i)
+        if (rates[i] == rate) return true;
+    return false;
+}
+
+float clamp_unit(float v) {
+    if (v < -1.0f) return -1.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
+
+void fill_audio_frame(AVFrame* dst, const float* src, int nb, int ch) {
+    const auto fmt = static_cast<AVSampleFormat>(dst->format);
+    if (fmt == AV_SAMPLE_FMT_FLTP) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<float*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k) d[k] = src[(std::size_t)k * (std::size_t)ch + (std::size_t)c];
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_FLT) {
+        auto* d = reinterpret_cast<float*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c)
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] =
+                    src[(std::size_t)k * (std::size_t)ch + (std::size_t)c];
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S16P) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<int16_t*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k)
+                d[k] = static_cast<int16_t>(
+                    std::lrint(clamp_unit(src[(std::size_t)k * (std::size_t)ch + (std::size_t)c]) *
+                               32767.0f));
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S16) {
+        auto* d = reinterpret_cast<int16_t*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c)
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] = static_cast<int16_t>(
+                    std::lrint(clamp_unit(src[(std::size_t)k * (std::size_t)ch + (std::size_t)c]) *
+                               32767.0f));
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S32P) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<int32_t*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k)
+                d[k] = static_cast<int32_t>(std::llrint(
+                    static_cast<double>(clamp_unit(src[(std::size_t)k * (std::size_t)ch +
+                                                        (std::size_t)c])) *
+                    2147483647.0));
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S32) {
+        auto* d = reinterpret_cast<int32_t*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c)
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] = static_cast<int32_t>(
+                    std::llrint(static_cast<double>(clamp_unit(
+                                    src[(std::size_t)k * (std::size_t)ch + (std::size_t)c])) *
+                                2147483647.0));
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_U8P) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<uint8_t*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k) {
+                const long v = std::lrint(
+                    (static_cast<double>(clamp_unit(src[(std::size_t)k * (std::size_t)ch +
+                                                         (std::size_t)c]) +
+                                        1.0f)) *
+                    127.5);
+                d[k] = static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+            }
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_U8) {
+        auto* d = reinterpret_cast<uint8_t*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c) {
+                const long v = std::lrint(
+                    (static_cast<double>(clamp_unit(src[(std::size_t)k * (std::size_t)ch +
+                                                         (std::size_t)c]) +
+                                        1.0f)) *
+                    127.5);
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] =
+                    static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+            }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_DBLP) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<double*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k)
+                d[k] = static_cast<double>(src[(std::size_t)k * (std::size_t)ch + (std::size_t)c]);
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_DBL) {
+        auto* d = reinterpret_cast<double*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c)
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] =
+                    static_cast<double>(src[(std::size_t)k * (std::size_t)ch + (std::size_t)c]);
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S64P) {
+        for (int c = 0; c < ch; ++c) {
+            auto* d = reinterpret_cast<int64_t*>(dst->extended_data[c]);
+            for (int k = 0; k < nb; ++k)
+                d[k] = static_cast<int64_t>(std::llrint(
+                    static_cast<double>(clamp_unit(src[(std::size_t)k * (std::size_t)ch +
+                                                        (std::size_t)c])) *
+                    9223372036854775807.0));
+        }
+        return;
+    }
+    if (fmt == AV_SAMPLE_FMT_S64) {
+        auto* d = reinterpret_cast<int64_t*>(dst->data[0]);
+        for (int k = 0; k < nb; ++k)
+            for (int c = 0; c < ch; ++c)
+                d[(std::size_t)k * (std::size_t)ch + (std::size_t)c] = static_cast<int64_t>(
+                    std::llrint(static_cast<double>(clamp_unit(
+                                    src[(std::size_t)k * (std::size_t)ch + (std::size_t)c])) *
+                                9223372036854775807.0));
+        return;
+    }
+    for (int c = 0; c < ch; ++c) {
+        auto* d = reinterpret_cast<float*>(dst->extended_data[c]);
+        for (int k = 0; k < nb; ++k) d[k] = 0.0f;
+    }
 }
 
 struct ExportHwCache {
@@ -1015,17 +1210,30 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     int a_frame_size = 0;
     int a_src_samples_ = 0;
     if (do_audio) {
-        const AVCodec* acodec = avcodec_find_encoder_by_name(s.audio_codec.c_str());
+        const std::string resolved = resolve_audio_encoder_name(s.audio_codec);
+        const AVCodec* acodec = find_audio_encoder(resolved);
+        if (!acodec && resolved != s.audio_codec)
+            acodec = avcodec_find_encoder_by_name(s.audio_codec.c_str());
         if (!acodec) {
             avcodec_free_context(&vctx); avformat_free_context(oc);
             return fail("Unknown audio encoder: " + s.audio_codec);
         }
+        if (!audio_sample_rate_supported(acodec, s.audio_sample_rate)) {
+            avcodec_free_context(&vctx); avformat_free_context(oc);
+            return fail("Audio encoder '" + std::string(acodec->name) + "' does not support " +
+                        std::to_string(s.audio_sample_rate) + " Hz sample rate.");
+        }
         actx = avcodec_alloc_context3(acodec);
         if (!actx) { avcodec_free_context(&vctx); avformat_free_context(oc); return fail("No audio ctx"); }
         actx->sample_rate = s.audio_sample_rate;
+        actx->time_base = AVRational{1, s.audio_sample_rate};
         av_channel_layout_default(&actx->ch_layout, s.audio_channels);
-        actx->sample_fmt = AV_SAMPLE_FMT_FLTP;
-        actx->bit_rate = static_cast<int64_t>(s.audio_bitrate_kbps) * 1000;
+        actx->sample_fmt = pick_audio_sample_fmt(acodec);
+        actx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+        if (audio_encoder_is_lossless(acodec->name))
+            actx->bit_rate = 0;
+        else
+            actx->bit_rate = static_cast<int64_t>(s.audio_bitrate_kbps) * 1000;
         if (avcodec_open2(actx, acodec, nullptr) < 0) {
             avcodec_free_context(&actx); avcodec_free_context(&vctx); avformat_free_context(oc);
             return fail("Failed to open audio encoder: " + s.audio_codec);
@@ -1108,14 +1316,14 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
     AVFrame* a_src = nullptr;
     if (do_audio) {
         a_src = av_frame_alloc();
-        a_src->format = AV_SAMPLE_FMT_FLTP;
+        a_src->format = actx->sample_fmt;
         a_src->sample_rate = s.audio_sample_rate;
         av_channel_layout_copy(&a_src->ch_layout, &actx->ch_layout);
         a_src->nb_samples = a_src_samples_ > 0 ? a_src_samples_ : a_frame_size;
         av_frame_get_buffer(a_src, 0);
     }
 
-    const double seq_fps = project.sequence.fps;
+    const double seq_fps = project.active_sequence().fps;
     const double export_fps = s.fps > 0.0 ? s.fps : (seq_fps > 0.0 ? seq_fps : 30.0);
     const double tl_per_frame = seq_fps > 0.0 ? seq_fps / export_fps : 1.0;
     pump.tl_per_frame = tl_per_frame;
@@ -1307,10 +1515,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
                 audio_sample += std::max<int64_t>(n, per_frame);
                 const std::size_t ch = (std::size_t)s.audio_channels;
                 while (a_acc.size() >= (std::size_t)a_frame_size * ch) {
-                    for (std::size_t c = 0; c < ch; ++c)
-                        for (int k = 0; k < a_frame_size; ++k)
-                            ((float*)a_src->extended_data[c])[k] =
-                                a_acc[(std::size_t)k * ch + c];
+                    fill_audio_frame(a_src, a_acc.data(), a_frame_size, (int)ch);
                     a_src->nb_samples = a_frame_size;
                     a_src->pts = (int64_t)a_frame_size * (int64_t)(a_sent);
                     avcodec_send_frame(actx, a_src);
@@ -1323,10 +1528,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
                 if (do_audio && actx && !a_acc.empty()) {
                     const std::size_t ch = (std::size_t)s.audio_channels;
                     const int tail = (int)(a_acc.size() / ch);
-                    for (std::size_t c = 0; c < ch; ++c)
-                        for (int k = 0; k < tail; ++k)
-                            ((float*)a_src->extended_data[c])[k] =
-                                a_acc[(std::size_t)k * ch + c];
+                    fill_audio_frame(a_src, a_acc.data(), tail, (int)ch);
                     a_src->nb_samples = tail;
                     a_src->pts = (int64_t)a_frame_size * (int64_t)(a_sent);
                     avcodec_send_frame(actx, a_src);
@@ -1410,10 +1612,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
             audio_sample += std::max<int64_t>(n, per_frame);
             const std::size_t ch = (std::size_t)s.audio_channels;
             while (a_acc.size() >= (std::size_t)a_frame_size * ch) {
-                for (std::size_t c = 0; c < ch; ++c)
-                    for (int k = 0; k < a_frame_size; ++k)
-                        ((float*)a_src->extended_data[c])[k] =
-                            a_acc[(std::size_t)k * ch + c];
+                fill_audio_frame(a_src, a_acc.data(), a_frame_size, (int)ch);
                 a_src->nb_samples = a_frame_size;
                 a_src->pts = (int64_t)a_frame_size * (int64_t)(a_sent);
                 avcodec_send_frame(actx, a_src);
@@ -1450,10 +1649,7 @@ bool export_project(const Project& project, const ExportSettings& s, ExportContr
             if (do_audio && actx && !a_acc.empty()) {
                 const std::size_t ch = (std::size_t)s.audio_channels;
                 const int tail = (int)(a_acc.size() / ch);
-                for (std::size_t c = 0; c < ch; ++c)
-                    for (int k = 0; k < tail; ++k)
-                        ((float*)a_src->extended_data[c])[k] =
-                            a_acc[(std::size_t)k * ch + c];
+                fill_audio_frame(a_src, a_acc.data(), tail, (int)ch);
                 a_src->nb_samples = tail;
                 a_src->pts = (int64_t)a_frame_size * (int64_t)(a_sent);
                 avcodec_send_frame(actx, a_src);

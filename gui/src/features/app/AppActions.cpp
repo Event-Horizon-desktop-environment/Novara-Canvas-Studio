@@ -46,9 +46,9 @@ void MainWindow::delete_selected_clip(const bool ripple) {
         qDebug() << "delete: selected ids ->" << s << "ripple=" << ripple;
     }
     const auto find = [&](canvas::core::ClipId id) -> const canvas::core::Clip* {
-        for (auto& t : project_->sequence.video_tracks)
+        for (auto& t : project_->active_sequence().video_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(id)) return c;
-        for (auto& t : project_->sequence.audio_tracks)
+        for (auto& t : project_->active_sequence().audio_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(id)) return c;
         return nullptr;
     };
@@ -78,23 +78,23 @@ void MainWindow::delete_selected_clip(const bool ripple) {
     bool any = false;
     for (const canvas::core::ClipId id : to_delete) {
         std::unique_ptr<canvas::core::ICommand> cmd;
-        for (std::size_t vi = 0; !cmd && vi < project_->sequence.video_tracks.size(); ++vi) {
-            if (project_->sequence.video_tracks[vi].clip_with_id(id))
+        for (std::size_t vi = 0; !cmd && vi < project_->active_sequence().video_tracks.size(); ++vi) {
+            if (project_->active_sequence().video_tracks[vi].clip_with_id(id))
                 cmd = ripple
-                    ? canvas::core::ripple_delete_clip(project_->sequence, canvas::core::Track::Kind::Video, vi, id)
-                    : canvas::core::lift_clip(project_->sequence, canvas::core::Track::Kind::Video, vi, id);
+                    ? canvas::core::ripple_delete_clip(project_->active_sequence(), canvas::core::Track::Kind::Video, vi, id)
+                    : canvas::core::lift_clip(project_->active_sequence(), canvas::core::Track::Kind::Video, vi, id);
         }
-        for (std::size_t ai = 0; !cmd && ai < project_->sequence.audio_tracks.size(); ++ai) {
-            if (project_->sequence.audio_tracks[ai].clip_with_id(id))
+        for (std::size_t ai = 0; !cmd && ai < project_->active_sequence().audio_tracks.size(); ++ai) {
+            if (project_->active_sequence().audio_tracks[ai].clip_with_id(id))
                 cmd = ripple
-                    ? canvas::core::ripple_delete_clip(project_->sequence, canvas::core::Track::Kind::Audio, ai, id)
-                    : canvas::core::lift_clip(project_->sequence, canvas::core::Track::Kind::Audio, ai, id);
+                    ? canvas::core::ripple_delete_clip(project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, id)
+                    : canvas::core::lift_clip(project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, id);
         }
         if (cmd) {
             qDebug() << "[edit] DELETE" << (ripple ? "ripple" : "lift")
                        << "id=" << static_cast<quint64>(id)
                        << "cmd=" << QString::fromStdString(cmd->name());
-            undo_.record(std::move(cmd));
+            active_undo().record(std::move(cmd));
             any = true;
         }
     }
@@ -119,9 +119,9 @@ void MainWindow::toggle_disable_selected_clip() {
     if (ids.empty()) return;
 
     const auto find = [&](canvas::core::ClipId id) -> const canvas::core::Clip* {
-        for (auto& t : project_->sequence.video_tracks)
+        for (auto& t : project_->active_sequence().video_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(id)) return c;
-        for (auto& t : project_->sequence.audio_tracks)
+        for (auto& t : project_->active_sequence().audio_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(id)) return c;
         return nullptr;
     };
@@ -147,18 +147,18 @@ void MainWindow::toggle_disable_selected_clip() {
     bool any = false;
     for (const canvas::core::ClipId id : reps) {
         std::unique_ptr<canvas::core::ICommand> cmd;
-        for (std::size_t vi = 0; !cmd && vi < project_->sequence.video_tracks.size(); ++vi) {
-            if (project_->sequence.video_tracks[vi].clip_with_id(id))
-                cmd = canvas::core::set_clip_enabled(project_->sequence, canvas::core::Track::Kind::Video, vi, id, enabling);
+        for (std::size_t vi = 0; !cmd && vi < project_->active_sequence().video_tracks.size(); ++vi) {
+            if (project_->active_sequence().video_tracks[vi].clip_with_id(id))
+                cmd = canvas::core::set_clip_enabled(project_->active_sequence(), canvas::core::Track::Kind::Video, vi, id, enabling);
         }
-        for (std::size_t ai = 0; !cmd && ai < project_->sequence.audio_tracks.size(); ++ai) {
-            if (project_->sequence.audio_tracks[ai].clip_with_id(id))
-                cmd = canvas::core::set_clip_enabled(project_->sequence, canvas::core::Track::Kind::Audio, ai, id, enabling);
+        for (std::size_t ai = 0; !cmd && ai < project_->active_sequence().audio_tracks.size(); ++ai) {
+            if (project_->active_sequence().audio_tracks[ai].clip_with_id(id))
+                cmd = canvas::core::set_clip_enabled(project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, id, enabling);
         }
         if (cmd) {
             qDebug() << "[edit] SET-ENABLED id=" << static_cast<quint64>(id)
                        << "-> enabled=" << enabling;
-            undo_.record(std::move(cmd));
+            active_undo().record(std::move(cmd));
             any = true;
         }
     }
@@ -181,9 +181,9 @@ void MainWindow::toggle_transition_on_selected() {
     if (id == 0) return;
 
     const auto find = [&](canvas::core::ClipId cid) -> const canvas::core::Clip* {
-        for (auto& t : project_->sequence.video_tracks)
+        for (auto& t : project_->active_sequence().video_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(cid)) return c;
-        for (auto& t : project_->sequence.audio_tracks)
+        for (auto& t : project_->active_sequence().audio_tracks)
             if (const canvas::core::Clip* c = t.clip_with_id(cid)) return c;
         return nullptr;
     };
@@ -193,24 +193,24 @@ void MainWindow::toggle_transition_on_selected() {
     const bool clearing =
         c->transition_out == canvas::core::TransitionType::CrossDissolve && c->has_transition();
     std::unique_ptr<canvas::core::ICommand> cmd;
-    for (std::size_t vi = 0; !cmd && vi < project_->sequence.video_tracks.size(); ++vi) {
-        if (project_->sequence.video_tracks[vi].clip_with_id(id))
+    for (std::size_t vi = 0; !cmd && vi < project_->active_sequence().video_tracks.size(); ++vi) {
+        if (project_->active_sequence().video_tracks[vi].clip_with_id(id))
             cmd = clearing
-                ? canvas::core::clear_clip_transition(project_->sequence, canvas::core::Track::Kind::Video, vi, id)
-                : canvas::core::set_clip_transition(project_->sequence, canvas::core::Track::Kind::Video, vi,
+                ? canvas::core::clear_clip_transition(project_->active_sequence(), canvas::core::Track::Kind::Video, vi, id)
+                : canvas::core::set_clip_transition(project_->active_sequence(), canvas::core::Track::Kind::Video, vi,
                                                 id, canvas::core::TransitionType::CrossDissolve, 6);
     }
-    for (std::size_t ai = 0; !cmd && ai < project_->sequence.audio_tracks.size(); ++ai) {
-        if (project_->sequence.audio_tracks[ai].clip_with_id(id))
+    for (std::size_t ai = 0; !cmd && ai < project_->active_sequence().audio_tracks.size(); ++ai) {
+        if (project_->active_sequence().audio_tracks[ai].clip_with_id(id))
             cmd = clearing
-                ? canvas::core::clear_clip_transition(project_->sequence, canvas::core::Track::Kind::Audio, ai, id)
-                : canvas::core::set_clip_transition(project_->sequence, canvas::core::Track::Kind::Audio, ai,
+                ? canvas::core::clear_clip_transition(project_->active_sequence(), canvas::core::Track::Kind::Audio, ai, id)
+                : canvas::core::set_clip_transition(project_->active_sequence(), canvas::core::Track::Kind::Audio, ai,
                                                 id, canvas::core::TransitionType::CrossDissolve, 6);
     }
     if (cmd) {
         qWarning() << "[transition] TOGGLE id=" << static_cast<quint64>(id)
                    << "clearing=" << clearing;
-        undo_.record(std::move(cmd));
+        active_undo().record(std::move(cmd));
         has_unsaved_changes_ = true;
         refresh_timeline();
         push_snapshot();
@@ -220,7 +220,7 @@ void MainWindow::toggle_transition_on_selected() {
 void MainWindow::toggle_bookmark_at_playhead() {
     if (!project_) return;
     qDebug() << "[edit] BOOKMARK toggle frame=" << current_frame_;
-    (void)project_->sequence.toggle_bookmark(current_frame_, "");
+    (void)project_->active_sequence().toggle_bookmark(current_frame_, "");
     has_unsaved_changes_ = true;
     refresh_timeline();
     push_snapshot();

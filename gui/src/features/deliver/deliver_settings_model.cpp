@@ -98,10 +98,10 @@ std::vector<std::string> audio_codecs_for_format(const std::string& format) {
     if (fmt.find("mpeg-2") != std::string::npos || fmt == "mpeg")
         return {"MP3"};
     if (fmt.find("avi") != std::string::npos)
-        return {"PCM", "MP3"};
+        return {"PCM", "MP3", "AC-3"};
     if (fmt.find("mxf") != std::string::npos || fmt.find("imf") != std::string::npos)
         return {"PCM"};
-    return {"AAC", "MP3", "PCM", "FLAC", "Opus", "Vorbis"};
+    return {"AAC", "MP3", "PCM", "FLAC", "ALAC", "AC-3", "E-AC-3", "Opus", "Vorbis"};
 }
 
 BitrateVisibility bitrate_visibility(const int rate_control_index) {

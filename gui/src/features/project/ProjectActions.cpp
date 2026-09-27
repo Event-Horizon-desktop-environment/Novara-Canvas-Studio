@@ -52,20 +52,24 @@ void MainWindow::new_untitled_project() {
     canvas::core::Track a1;
     a1.kind = canvas::core::Track::Kind::Audio;
     a1.name = "A1";
-    p->sequence.video_tracks.push_back(std::move(v1));
-    p->sequence.audio_tracks.push_back(std::move(a1));
+    p->active_sequence().name = "Timeline 1";
+    p->active_sequence().video_tracks.push_back(std::move(v1));
+    p->active_sequence().audio_tracks.push_back(std::move(a1));
     project_ = std::move(p);
-    undo_.clear();
+    undo_stacks_.clear();
+    undo_stacks_.emplace_back();
+    timeline_playheads_.assign(1, 0);
+    rebuild_timeline_tabs();
     current_bin_.clear();
     project_->bins.clear();
-    if (color_mini_strip_) color_mini_strip_->set_sequence(&project_->sequence);
+    if (color_mini_strip_) color_mini_strip_->set_sequence(&project_->active_sequence());
     qWarning().nospace() << "[proj] NEW project created (V1+A1, fps="
-                         << project_->sequence.fps << ")";
+                         << project_->active_sequence().fps << ")";
 }
 
 void MainWindow::ensure_tracks_at(canvas::core::Track::Kind kind, std::size_t index) {
-    auto& tracks = kind == canvas::core::Track::Kind::Video ? project_->sequence.video_tracks
-                                                            : project_->sequence.audio_tracks;
+    auto& tracks = kind == canvas::core::Track::Kind::Video ? project_->active_sequence().video_tracks
+                                                            : project_->active_sequence().audio_tracks;
     while (tracks.size() <= index) {
         canvas::core::Track t;
         t.kind = kind;
@@ -77,13 +81,13 @@ void MainWindow::ensure_tracks_at(canvas::core::Track::Kind kind, std::size_t in
 
 void MainWindow::add_title_clip() {
     if (!project_) return;
-    const double fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    const double fps = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     const int64_t dur = std::max<int64_t>(1, static_cast<int64_t>(std::llround(3.0 * fps)));
     const int64_t frame = std::max<int64_t>(0, current_frame_);
 
     std::size_t vindex = 0;
-    for (std::size_t i = project_->sequence.video_tracks.size(); i-- > 0;) {
-        if (!project_->sequence.video_tracks[i].locked) { vindex = i; break; }
+    for (std::size_t i = project_->active_sequence().video_tracks.size(); i-- > 0;) {
+        if (!project_->active_sequence().video_tracks[i].locked) { vindex = i; break; }
     }
     ensure_tracks_at(canvas::core::Track::Kind::Video, vindex);
 
@@ -96,12 +100,12 @@ void MainWindow::add_title_clip() {
     clip.title.text = "Title";
     clip.title.size = canvas::core::title::kSizeDefault;
 
-    auto cmd = canvas::core::place_clip(project_->sequence, canvas::core::Track::Kind::Video,
+    auto cmd = canvas::core::place_clip(project_->active_sequence(), canvas::core::Track::Kind::Video,
                                         vindex, std::move(clip),
                                         canvas::core::Placement::Overwrite, 0.0);
     if (!cmd) return;
     qWarning() << "[edit] ADD-TITLE at=" << frame << "track=" << vindex << "dur=" << dur;
-    undo_.record(std::move(cmd));
+    active_undo().record(std::move(cmd));
     has_unsaved_changes_ = true;
     refresh_timeline();
     push_snapshot();
@@ -151,11 +155,11 @@ void MainWindow::place_title_at(const QString& preset_id, int64_t frame) {
     const std::string sample = preset ? preset->sample : "Text";
     const float size = preset ? preset->size : canvas::core::title::kSizeDefault;
 
-    const double fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    const double fps = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     const int64_t dur = std::max<int64_t>(1, static_cast<int64_t>(std::llround(3.0 * fps)));
     frame = std::max<int64_t>(0, frame);
 
-    const std::size_t vindex = project_->sequence.video_tracks.size();
+    const std::size_t vindex = project_->active_sequence().video_tracks.size();
     ensure_tracks_at(canvas::core::Track::Kind::Video, vindex);
 
     canvas::core::Clip clip;
@@ -167,18 +171,18 @@ void MainWindow::place_title_at(const QString& preset_id, int64_t frame) {
     clip.title.text = sample;
     clip.title.size = size;
 
-    auto cmd = canvas::core::place_clip(project_->sequence, canvas::core::Track::Kind::Video,
+    auto cmd = canvas::core::place_clip(project_->active_sequence(), canvas::core::Track::Kind::Video,
                                         vindex, std::move(clip),
                                         canvas::core::Placement::Overwrite, 0.0);
     if (!cmd) return;
     qWarning() << "[edit] TOOLBOX-TITLE preset=" << qPrintable(preset_id) << "at=" << frame
                << "track=" << vindex << "dur=" << dur;
-    undo_.record(std::move(cmd));
+    active_undo().record(std::move(cmd));
     has_unsaved_changes_ = true;
     refresh_timeline();
     push_snapshot();
 
-    for (const canvas::core::Clip& c : project_->sequence.video_tracks[vindex].clips) {
+    for (const canvas::core::Clip& c : project_->active_sequence().video_tracks[vindex].clips) {
         if (c.tl_in >= frame) {
             selected_clip_ = c.id;
             selected_clip_ids_ = {c.id};
@@ -198,28 +202,28 @@ void MainWindow::apply_transition_from_toolbox(const QString& transition_id, int
     frame = std::max<int64_t>(0, frame);
 
     const int lane = timeline_->resolve_drop_lane(scene_y, canvas::core::Track::Kind::Video).index;
-    if (lane < 0 || static_cast<std::size_t>(lane) >= project_->sequence.video_tracks.size())
+    if (lane < 0 || static_cast<std::size_t>(lane) >= project_->active_sequence().video_tracks.size())
         return;
     const canvas::core::Clip* clip =
-        project_->sequence.video_tracks[static_cast<std::size_t>(lane)].clip_at(frame);
+        project_->active_sequence().video_tracks[static_cast<std::size_t>(lane)].clip_at(frame);
     if (!clip) return;
 
-    const double fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+    const double fps = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
     const int64_t dur = std::max<int64_t>(1, static_cast<int64_t>(std::llround(0.5 * fps)));
     std::unique_ptr<canvas::core::ICommand> cmd =
         type == canvas::core::TransitionType::FadeIn
-            ? canvas::core::set_clip_transition_in(project_->sequence,
+            ? canvas::core::set_clip_transition_in(project_->active_sequence(),
                                                    canvas::core::Track::Kind::Video,
                                                    static_cast<std::size_t>(lane), clip->id,
                                                    type, dur)
-            : canvas::core::set_clip_transition(project_->sequence,
+            : canvas::core::set_clip_transition(project_->active_sequence(),
                                                 canvas::core::Track::Kind::Video,
                                                 static_cast<std::size_t>(lane), clip->id,
                                                 type, dur);
     if (!cmd) return;
     qWarning() << "[transition] TOOLBOX id=" << qPrintable(transition_id)
                << "clip=" << clip->id << "track=" << lane << "frame=" << frame << "dur=" << dur;
-    undo_.record(std::move(cmd));
+    active_undo().record(std::move(cmd));
     has_unsaved_changes_ = true;
     refresh_timeline();
     push_snapshot();
@@ -260,14 +264,14 @@ bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
         aclip.src_in = clip_src_in;
         aclip.src_out = clip_src_out;
         aclip.name = base + " Audio";
-        auto cmd = canvas::core::place_clip(project_->sequence, canvas::core::Track::Kind::Audio,
+        auto cmd = canvas::core::place_clip(project_->active_sequence(), canvas::core::Track::Kind::Audio,
                                         static_cast<std::size_t>(lane), std::move(aclip), mode,
                                         found->fps);
         if (!cmd) return false;
         qWarning() << "[edit] PLACE-AUDIO media=" << media_id << "track=" << lane
                    << "at=" << frame << "mode=" << static_cast<int>(mode)
                    << "path=" << QString::fromStdString(found->path);
-        undo_.record(std::move(cmd));
+        active_undo().record(std::move(cmd));
         has_unsaved_changes_ = true;
         refresh_timeline();
         push_snapshot();
@@ -290,13 +294,13 @@ bool MainWindow::place_media_at(canvas::core::MediaId media_id, int64_t frame,
 
     ensure_tracks_at(canvas::core::Track::Kind::Audio, 0);
 
-    auto cmd = canvas::core::place_linked_clip(project_->sequence, static_cast<std::size_t>(lane), 0,
+    auto cmd = canvas::core::place_linked_clip(project_->active_sequence(), static_cast<std::size_t>(lane), 0,
                                            std::move(clip), std::move(aclip), mode, found->fps);
     if (!cmd) return false;
     qWarning() << "[edit] PLACE media=" << media_id << "v_track=" << lane << "at=" << frame
                << "mode=" << static_cast<int>(mode)
                << "path=" << QString::fromStdString(found->path);
-    undo_.record(std::move(cmd));
+    active_undo().record(std::move(cmd));
     has_unsaved_changes_ = true;
     refresh_timeline();
     push_snapshot();
@@ -418,10 +422,10 @@ void MainWindow::delete_selected_media() {
             }
         }
     };
-    collect(project_->sequence.video_tracks, false);
-    collect(project_->sequence.audio_tracks, false);
-    collect(project_->sequence.video_tracks, true);
-    collect(project_->sequence.audio_tracks, true);
+    collect(project_->active_sequence().video_tracks, false);
+    collect(project_->active_sequence().audio_tracks, false);
+    collect(project_->active_sequence().video_tracks, true);
+    collect(project_->active_sequence().audio_tracks, true);
 
     const auto erase_clips = [&](std::vector<canvas::core::Track>& tracks) {
         for (auto& t : tracks) {
@@ -433,8 +437,8 @@ void MainWindow::delete_selected_media() {
                 t.clips.end());
         }
     };
-    erase_clips(project_->sequence.video_tracks);
-    erase_clips(project_->sequence.audio_tracks);
+    erase_clips(project_->active_sequence().video_tracks);
+    erase_clips(project_->active_sequence().audio_tracks);
 
     std::sort(indices.begin(), indices.end());
     for (auto it = indices.rbegin(); it != indices.rend(); ++it)
@@ -552,16 +556,16 @@ int MainWindow::import_media_paths(const QStringList& paths) {
             entry.has_audio = probe.has_audio();
 
             const bool any_clips =
-                std::any_of(project_->sequence.video_tracks.begin(),
-                            project_->sequence.video_tracks.end(),
+                std::any_of(project_->active_sequence().video_tracks.begin(),
+                            project_->active_sequence().video_tracks.end(),
                             [](const canvas::core::Track& t) { return !t.clips.empty(); }) ||
-                std::any_of(project_->sequence.audio_tracks.begin(),
-                            project_->sequence.audio_tracks.end(),
+                std::any_of(project_->active_sequence().audio_tracks.begin(),
+                            project_->active_sequence().audio_tracks.end(),
                             [](const canvas::core::Track& t) { return !t.clips.empty(); });
-            if (project_->sequence.fps == 30.0 && project_->media.empty() && !any_clips) {
+            if (project_->active_sequence().fps == 30.0 && project_->media.empty() && !any_clips) {
                 const double first_fps = probe.frame_rate();
                 if (first_fps > 0.0) {
-                    project_->sequence.fps = first_fps;
+                    project_->active_sequence().fps = first_fps;
                     qWarning().nospace() << "[seq] adopted fps="
                                          << QString::number(first_fps, 'f', 3)
                                          << " from first media: " << path;
@@ -596,7 +600,7 @@ int MainWindow::import_media_paths(const QStringList& paths) {
         if (aprobe.open(path.toStdString()) && aprobe.has_audio()) {
             const double probe_ms = std::chrono::duration<double, std::milli>(
                                         std::chrono::steady_clock::now() - probe_t0).count();
-            const double seq_fps = project_->sequence.fps > 0.0 ? project_->sequence.fps : 30.0;
+            const double seq_fps = project_->active_sequence().fps > 0.0 ? project_->active_sequence().fps : 30.0;
             const double secs = aprobe.duration_seconds();
             canvas::core::MediaEntry entry;
             entry.id = static_cast<canvas::core::MediaId>(project_->media.size());
@@ -824,13 +828,18 @@ void MainWindow::open_file(const QString& path) {
             }
         }
         project_ = std::move(loaded);
-        undo_.clear();
+        if (project_->timelines.empty()) project_->timelines.emplace_back();
+        if (project_->active_timeline >= project_->timelines.size()) project_->active_timeline = 0;
+        undo_stacks_.clear();
+        undo_stacks_.resize(project_->timelines.size());
+        timeline_playheads_.assign(project_->timelines.size(), 0);
+        rebuild_timeline_tabs();
         has_unsaved_changes_ = false;
         if (recovered) has_unsaved_changes_ = true;
         project_path_ = path;
         remember_recent_project(path);
         current_bin_.clear();
-        if (color_mini_strip_) color_mini_strip_->set_sequence(&project_->sequence);
+        if (color_mini_strip_) color_mini_strip_->set_sequence(&project_->active_sequence());
         media_pool_->clear();
         for (const auto& m : project_->media) {
             controller_.add_media(m);
@@ -910,8 +919,8 @@ void MainWindow::on_open_recent_file(QAction* action) {
 }
 
 void MainWindow::on_undo() {
-    if (!project_ || !undo_.can_undo()) return;
-    undo_.undo(project_->sequence);
+    if (!project_ || !active_undo().can_undo()) return;
+    active_undo().undo(project_->active_sequence());
     has_unsaved_changes_ = true;
     refresh_timeline();
     refresh_media_pool();
@@ -922,8 +931,8 @@ void MainWindow::on_undo() {
 }
 
 void MainWindow::on_redo() {
-    if (!project_ || !undo_.can_redo()) return;
-    undo_.redo(project_->sequence);
+    if (!project_ || !active_undo().can_redo()) return;
+    active_undo().redo(project_->active_sequence());
     has_unsaved_changes_ = true;
     refresh_timeline();
     refresh_media_pool();

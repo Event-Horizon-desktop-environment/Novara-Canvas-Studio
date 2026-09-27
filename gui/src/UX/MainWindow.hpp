@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QPointer>
+#include <QTabBar>
 #include <QToolButton>
 #include <QSlider>
 #include <QStringList>
@@ -192,6 +193,15 @@ private:
                                        double scene_y);
     void refresh_media_pool();
     void new_untitled_project();
+    void rebuild_timeline_tabs();
+    void switch_timeline(std::size_t index);
+    void new_timeline();
+    void duplicate_timeline(std::size_t index);
+    void close_timeline(std::size_t index);
+    void rename_timeline(std::size_t index);
+    void move_timeline(std::size_t from, std::size_t to);
+    void activate_timeline(std::size_t index, int64_t frame);
+    [[nodiscard]] canvas::core::UndoStack& active_undo();
     int import_media_paths(const QStringList& paths);
     void refresh_bin_tree();
     void set_current_bin(const QString& bin_name);
@@ -299,7 +309,9 @@ private:
     friend void leave_color_page(MainWindow& main_window);
 
     std::unique_ptr<canvas::core::Project> project_;
-    canvas::core::UndoStack undo_;
+    std::vector<canvas::core::UndoStack> undo_stacks_;
+    std::vector<int64_t> timeline_playheads_;
+    QTabBar* timeline_tabs_ = nullptr;
     QString project_path_;
     QTimer* autosave_timer_ = nullptr;
 

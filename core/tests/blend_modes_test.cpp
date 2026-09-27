@@ -127,7 +127,7 @@ void test_parity_grid() {
 void test_edit_and_json_roundtrip() {
     Project p;
     p.name = "F6";
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
     MediaEntry m;
     m.id = 7;
     m.path = "/tmp/canvas_f6.mov";
@@ -148,37 +148,37 @@ void test_edit_and_json_roundtrip() {
     c.src_in = 0;
     c.src_out = 50;
     v.clips.push_back(c);
-    p.sequence.video_tracks.push_back(v);
-    p.sequence.next_clip_id = 2;
+    p.active_sequence().video_tracks.push_back(v);
+    p.active_sequence().next_clip_id = 2;
 
     const BlendMode new_modes[] = {BlendMode::SoftLight, BlendMode::Subtract, BlendMode::Difference};
     for (const BlendMode mode : new_modes) {
-        const BlendMode prior = p.sequence.video_tracks[0].clips[0].blend_mode;
-        auto cmd = set_clip_composite(p.sequence, Track::Kind::Video, 0, 1, 1.0f, mode);
+        const BlendMode prior = p.active_sequence().video_tracks[0].clips[0].blend_mode;
+        auto cmd = set_clip_composite(p.active_sequence(), Track::Kind::Video, 0, 1, 1.0f, mode);
         check(cmd != nullptr, "set_clip_composite accepts appended mode");
-        check(p.sequence.video_tracks[0].clips[0].blend_mode == mode,
+        check(p.active_sequence().video_tracks[0].clips[0].blend_mode == mode,
               "clip carries appended blend mode");
-        cmd->undo(p.sequence);
-        check(p.sequence.video_tracks[0].clips[0].blend_mode == prior,
+        cmd->undo(p.active_sequence());
+        check(p.active_sequence().video_tracks[0].clips[0].blend_mode == prior,
               "undo restores the prior blend mode");
-        cmd->redo(p.sequence);
-        check(p.sequence.video_tracks[0].clips[0].blend_mode == mode, "redo restores mode");
+        cmd->redo(p.active_sequence());
+        check(p.active_sequence().video_tracks[0].clips[0].blend_mode == mode, "redo restores mode");
 
         const std::string path = "/tmp/canvas_f6_blend.ncs";
         std::string err;
         check(save_project(p, path, &err), "save project with appended blend mode");
         Project q;
         check(load_project(q, path, &err), "load project with appended blend mode");
-        check(q.sequence.video_tracks.size() == 1 &&
-                  q.sequence.video_tracks[0].clips.size() == 1 &&
-                  q.sequence.video_tracks[0].clips[0].blend_mode == mode,
+        check(q.active_sequence().video_tracks.size() == 1 &&
+                  q.active_sequence().video_tracks[0].clips.size() == 1 &&
+                  q.active_sequence().video_tracks[0].clips[0].blend_mode == mode,
               "appended blend mode survives JSON round-trip");
     }
     for (int i = 0; i < blend::kBlendModeCount; ++i) {
-        auto cmd = set_clip_composite(p.sequence, Track::Kind::Video, 0, 1, 1.0f,
+        auto cmd = set_clip_composite(p.active_sequence(), Track::Kind::Video, 0, 1, 1.0f,
                                       static_cast<BlendMode>(i));
         check(cmd != nullptr &&
-                  static_cast<int>(p.sequence.video_tracks[0].clips[0].blend_mode) == i,
+                  static_cast<int>(p.active_sequence().video_tracks[0].clips[0].blend_mode) == i,
               "set_clip_composite accepts every mode 0..7");
     }
 }

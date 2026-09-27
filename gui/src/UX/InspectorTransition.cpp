@@ -142,7 +142,7 @@ struct Resolved {
 
 std::optional<Resolved> resolve_clip(const canvas::core::Project& proj, ClipId id) {
     if (id == 0) return std::nullopt;
-    const auto& seq = proj.sequence;
+    const auto& seq = proj.active_sequence();
     const auto find_in = [&](const std::vector<Track>& tracks, Track::Kind kind)
         -> std::optional<Resolved> {
         for (std::size_t i = 0; i < tracks.size(); ++i) {
@@ -292,7 +292,7 @@ void populate_side(const canvas::core::Project& proj, const TimelineWidget& time
     const int64_t duration = in_edge ? clip.transition_in_duration : clip.transition_out_duration;
 
     sc.video_type->setCurrentIndex(video_index_for(type));
-    const double fps = proj.sequence.fps;
+    const double fps = proj.active_sequence().fps;
     const double secs = fps > 0.0 ? static_cast<double>(duration) / fps : 0.0;
     sc.video_secs->setValue(secs);
     sc.video_frames->setValue(duration);
@@ -351,7 +351,7 @@ void build_inspector_transition(MainWindow& mw, QVBoxLayout* transition_layout,
 
     const auto commit = [&mw](std::unique_ptr<canvas::core::ICommand>&& cmd) {
         if (!cmd) return;
-        mw.undo_.record(std::move(cmd));
+        mw.active_undo().record(std::move(cmd));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -570,7 +570,7 @@ apply_theme_style(lbl, &muted_label_style);
             commit_edits([&]() {
                 auto r = side_video_target(*mw.project_, *mw.timeline_, sc);
                 if (!r) return;
-                commit(make_transition_cmd(mw.project_->sequence, *r, sc.in_edge,
+                commit(make_transition_cmd(mw.project_->active_sequence(), *r, sc.in_edge,
                                            video_type_from_index(sc.video_type->currentIndex()),
                                            sc.video_frames->value()));
             });
@@ -583,10 +583,10 @@ apply_theme_style(lbl, &muted_label_style);
         QObject::connect(sc.video_frames, &QSpinBox::editingFinished, &mw,
                          [&mw, &reg, &sc, commit, commit_edits, sync_duration_spins]() {
             commit_edits([&]() {
-                sync_duration_spins(mw.project_->sequence.fps);
+                sync_duration_spins(mw.project_->active_sequence().fps);
                 auto r = side_video_target(*mw.project_, *mw.timeline_, sc);
                 if (!r) return;
-                commit(make_transition_cmd(mw.project_->sequence, *r, sc.in_edge,
+                commit(make_transition_cmd(mw.project_->active_sequence(), *r, sc.in_edge,
                                            video_type_from_index(sc.video_type->currentIndex()),
                                            sc.video_frames->value()));
             });
@@ -594,12 +594,12 @@ apply_theme_style(lbl, &muted_label_style);
         QObject::connect(sc.video_secs, &QDoubleSpinBox::editingFinished, &mw,
                          [&mw, &reg, &sc, commit, commit_edits, sync_duration_spins]() {
             commit_edits([&]() {
-                const double fps = mw.project_->sequence.fps;
+                const double fps = mw.project_->active_sequence().fps;
                 sc.video_frames->setValue(static_cast<int64_t>(std::lround(sc.video_secs->value() * fps)));
                 sync_duration_spins(fps);
                 auto r = side_video_target(*mw.project_, *mw.timeline_, sc);
                 if (!r) return;
-                commit(make_transition_cmd(mw.project_->sequence, *r, sc.in_edge,
+                commit(make_transition_cmd(mw.project_->active_sequence(), *r, sc.in_edge,
                                            video_type_from_index(sc.video_type->currentIndex()),
                                            sc.video_frames->value()));
             });
@@ -615,7 +615,7 @@ apply_theme_style(lbl, &muted_label_style);
             if (reg.updating) return;
             auto r = side_video_target(*mw.project_, *mw.timeline_, sc);
             if (!r) return;
-            commit(make_curve_cmd(mw.project_->sequence, *r, sc.in_edge,
+            commit(make_curve_cmd(mw.project_->active_sequence(), *r, sc.in_edge,
                                   ease_amount_from_index(sc.ease->currentIndex()),
                                   static_cast<float>(sc.curve->value()) / 100.0f,
                                   sc.start_ratio->value(), sc.end_ratio->value()));
@@ -701,7 +701,7 @@ apply_theme_style(lbl, &muted_label_style);
             if (!r) return;
             auto audio = audio_target(*mw.project_, *r);
             if (!audio) return;
-            commit(make_transition_cmd(mw.project_->sequence, *audio, sc.in_edge,
+            commit(make_transition_cmd(mw.project_->active_sequence(), *audio, sc.in_edge,
                                        audio_type_from_index(owned_fade->currentIndex()),
                                        sc.audio_frames->value()));
         };
@@ -709,14 +709,14 @@ apply_theme_style(lbl, &muted_label_style);
                          [commit_audio_edits]() { commit_audio_edits(); });
         QObject::connect(sc.audio_frames, &QSpinBox::editingFinished, &mw,
                          [&mw, &sc, sync_audio_duration, commit_audio_edits]() {
-            sync_audio_duration(mw.project_->sequence.fps);
+            sync_audio_duration(mw.project_->active_sequence().fps);
             commit_audio_edits();
         });
         QObject::connect(sc.audio_secs, &QDoubleSpinBox::editingFinished, &mw,
                          [&mw, &sc, sync_audio_duration, commit_audio_edits]() {
             sc.audio_frames->setValue(
-                static_cast<int64_t>(std::lround(sc.audio_secs->value() * mw.project_->sequence.fps)));
-            sync_audio_duration(mw.project_->sequence.fps);
+                static_cast<int64_t>(std::lround(sc.audio_secs->value() * mw.project_->active_sequence().fps)));
+            sync_audio_duration(mw.project_->active_sequence().fps);
             commit_audio_edits();
         });
 

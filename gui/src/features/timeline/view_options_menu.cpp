@@ -175,20 +175,20 @@ void attach_timeline_view_options_button(MainWindow& mw, QToolButton* button) {
         auto* act = menu->addAction(QObject::tr("Collapse All Tracks"));
         QObject::connect(act, &QAction::triggered, &mw, [&mw] {
             if (!mw.project_) return;
-            auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->sequence, true);
+            auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->active_sequence(), true);
             if (!cmd) return;
             mw.has_unsaved_changes_ = true;
-            mw.undo_.record(std::move(cmd));
+            mw.active_undo().record(std::move(cmd));
             mw.refresh_timeline();
             mw.push_snapshot();
         });
         act = menu->addAction(QObject::tr("Expand All Tracks"));
         QObject::connect(act, &QAction::triggered, &mw, [&mw] {
             if (!mw.project_) return;
-            auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->sequence, false);
+            auto cmd = canvas::core::set_all_tracks_collapsed(mw.project_->active_sequence(), false);
             if (!cmd) return;
             mw.has_unsaved_changes_ = true;
-            mw.undo_.record(std::move(cmd));
+            mw.active_undo().record(std::move(cmd));
             mw.refresh_timeline();
             mw.push_snapshot();
         });

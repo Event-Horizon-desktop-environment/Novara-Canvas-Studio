@@ -48,12 +48,12 @@ namespace {
 double media_fps_for(const Project& project, const Clip& clip) {
     const MediaEntry* m = project.media_by_id(clip.media);
     if (m && m->fps > 0.0) return m->fps;
-    return project.sequence.fps;
+    return project.active_sequence().fps;
 }
 
 int64_t clip_src_frame(const Project& project, const Clip& clip, int64_t tl_frame) {
     const double mf = media_fps_for(project, clip);
-    const double sf = project.sequence.fps;
+    const double sf = project.active_sequence().fps;
     if (mf <= 0.0 || sf <= 0.0) {
         return clip.src_in +
                cliprate::scaled_frame_offset(clip, tl_frame - clip.tl_in);
@@ -211,7 +211,7 @@ VideoFramePtr render_video_frame(const Project& project, int64_t tl_frame, int w
         log::log_error("render_video_frame: BAD_ARGS w=%d h=%d", width, height);
         return nullptr;
     }
-    const Sequence& seq = project.sequence;
+    const Sequence& seq = project.active_sequence();
     CANVAS_LOG("render_video_frame: tl_frame=%lld %dx%d tracks=%zu",
            (long long)tl_frame, width, height, seq.video_tracks.size());
 
@@ -313,7 +313,7 @@ bool RenderSession::begin(const Project& project, int width, int height,
         log::log_error("RenderSession::begin FAILED w=%d h=%d", width, height);
         return false;
     }
-    const auto& seq = project.sequence;
+    const auto& seq = project.active_sequence();
     for (const auto& track : seq.video_tracks) {
         if (track.locked) continue;
         TrackDecoder td;
@@ -417,7 +417,7 @@ VideoFramePtr RenderSession::frame(int64_t tl_frame) {
     }
 
     float fade = 1.0f;
-    const Sequence& seq_ = project_ ? project_->sequence : Sequence{};
+    const Sequence& seq_ = project_ ? project_->active_sequence() : Sequence{};
     const Clip* a_ = nullptr;
     for (std::size_t i = seq_.video_tracks.size(); i-- > 0;) {
         const Track& t_ = seq_.video_tracks[i];
@@ -480,7 +480,7 @@ bool RenderSession::frame_gpu(int64_t tl_frame, GpuFrameInfo* out) {
     const Clip* the_clip = nullptr;
     {
         int found = 0;
-        const auto& seq = project_->sequence;
+        const auto& seq = project_->active_sequence();
         for (const auto& track : seq.video_tracks) {
             if (track.locked) continue;
             const Clip* c = track.clip_at(tl_frame);
@@ -503,7 +503,7 @@ bool RenderSession::frame_gpu(int64_t tl_frame, GpuFrameInfo* out) {
                            f->transition_in_duration > 0 && tl_frame >= f->tl_in &&
                            tl_frame < f->tl_in + f->transition_in_duration;
         bool has_b_after = false;
-        for (const auto& track : project_->sequence.video_tracks) {
+        for (const auto& track : project_->active_sequence().video_tracks) {
             if (track.locked) continue;
             for (const auto& cc : track.clips)
                 if (cc.id != f->id && cc.tl_in == f->tl_out) { has_b_after = true; break; }
@@ -628,7 +628,7 @@ AudioChunkPtr render_audio_chunk(const Project& project, int64_t tl_sample, int 
                         num_frames, out_sample_rate, out_channels);
         return nullptr;
     }
-    const Sequence& seq = project.sequence;
+    const Sequence& seq = project.active_sequence();
     CANVAS_LOG("render_audio_chunk: tl_sample=%lld frames=%d rate=%d ch=%d",
            (long long)tl_sample, num_frames, out_sample_rate, out_channels);
 
@@ -721,14 +721,14 @@ AudioChunkPtr RenderSession::audio_chunk(int64_t tl_sample, int num_frames,
     CANVAS_LOG("RenderSession::audio_chunk tl_sample=%lld frames=%d rate=%d ch=%d",
            (long long)tl_sample, num_frames, out_sample_rate, out_channels);
 
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     const double tl_sec = static_cast<double>(tl_sample) / out_sample_rate;
     const int64_t start_tl_frame =
         (seq_fps > 0.0)
             ? static_cast<int64_t>(std::llround(tl_sec * seq_fps))
             : static_cast<int64_t>(std::llround(tl_sec * fps));
 
-    const bool any_solo = audio_mix::any_solo(project_->sequence.audio_tracks);
+    const bool any_solo = audio_mix::any_solo(project_->active_sequence().audio_tracks);
     for (AudioTrackDecoder& atd : audio_tracks_) {
         const Track& track = *atd.track;
         if (track.muted || (any_solo && !track.solo)) {

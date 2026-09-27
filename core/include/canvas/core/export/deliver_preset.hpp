@@ -204,5 +204,6 @@ std::vector<std::string> deliver_formats();
 std::vector<std::string> deliver_video_codecs();
 std::vector<std::string> deliver_audio_codecs();
 std::vector<std::string> deliver_encoders();
+std::string audio_encoder_name(const std::string& codec);
 
 }

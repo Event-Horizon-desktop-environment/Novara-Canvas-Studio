@@ -100,11 +100,11 @@ static const char* kOutDir = "/tmp/canvas_export_sweep";
 static Project make_project(const std::string& src_path) {
     Project p;
     p.name = "ExportSweep";
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
     MediaEntry m; m.id = 0; m.path = src_path; m.fps = 30.0; m.width = 128; m.height = 96;
     m.total_frames = 12; p.media.push_back(m);
     Track v; v.kind = Track::Kind::Video; v.name = "V1";
-    p.sequence.video_tracks.push_back(std::move(v));
+    p.active_sequence().video_tracks.push_back(std::move(v));
     Clip clip; clip.media = 0; clip.name = "A"; clip.tl_in = 0; clip.src_in = 0; clip.src_out = 12;
     clip.title.text = "SWEEP";
     clip.title.size = 0.14f;
@@ -120,7 +120,7 @@ static Project make_project(const std::string& src_path) {
     clip.transition_in_duration = 3;
     clip.transition_out = TransitionType::DipToBlack;
     clip.transition_out_duration = 3;
-    place_clip(p.sequence, Track::Kind::Video, 0, clip, Placement::Overwrite);
+    place_clip(p.active_sequence(), Track::Kind::Video, 0, clip, Placement::Overwrite);
     return p;
 }
 

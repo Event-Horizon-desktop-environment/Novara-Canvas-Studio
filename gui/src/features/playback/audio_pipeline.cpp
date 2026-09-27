@@ -236,7 +236,7 @@ void AudioPipeline::preroll(int64_t seq_frame, int lead_ms, bool playing) {
     if (!active_ || !sink_.is_open() || lead_ms <= 0) return;
     const auto sources = audible_sources_at(seq_frame);
     if (sources.empty()) return;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     if (seq_fps <= 0.0) return;
     const int64_t total = static_cast<int64_t>(static_cast<double>(lead_ms) / 1000.0 * rate_);
     const int64_t written = write_mixed(seq_frame, total);
@@ -368,7 +368,7 @@ void AudioPipeline::play_scrub_grain(int64_t seq_frame) {
     if (ait == decoders_.end() || !ait->second->has_audio()) return;
     const double fps_v = media_fps_of(*project_, *clip);
     if (fps_v <= 0.0) return;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     if (seq_fps <= 0.0) return;
     const int64_t base_sample = playhead_to_audio_sample(seq_frame);
     const int64_t grain_frames =
@@ -399,8 +399,8 @@ const canvas::core::Clip* AudioPipeline::audio_clip_at(int64_t seq_frame) const 
 
 std::vector<AudioPipeline::AudioSource> AudioPipeline::audible_sources_at(int64_t seq_frame) const {
     std::vector<AudioSource> out;
-    if (project_ && seq_frame >= 0 && seq_frame < project_->sequence.duration_frames()) {
-        const canvas::core::Sequence& seq = project_->sequence;
+    if (project_ && seq_frame >= 0 && seq_frame < project_->active_sequence().duration_frames()) {
+        const canvas::core::Sequence& seq = project_->active_sequence();
 
         bool any_solo = false;
         for (const auto& t : seq.audio_tracks)
@@ -435,7 +435,7 @@ std::vector<AudioPipeline::AudioSource> AudioPipeline::audible_sources_at(int64_
 int64_t AudioPipeline::write_mixed(int64_t seq_frame, int64_t want_frames) {
     const auto sources = audible_sources_at(seq_frame);
     if (sources.empty() || want_frames <= 0) return 0;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     if (seq_fps <= 0.0) return 0;
 
     std::vector<float> mix(static_cast<std::size_t>(want_frames) * channels_, 0.0f);
@@ -585,9 +585,9 @@ int64_t AudioPipeline::write_mixed(int64_t seq_frame, int64_t want_frames) {
 
 const canvas::core::Clip* AudioPipeline::clip_at_any_track(int64_t seq_frame) const {
     if (!project_) return nullptr;
-    for (const auto& t : project_->sequence.audio_tracks)
+    for (const auto& t : project_->active_sequence().audio_tracks)
         if (const canvas::core::Clip* c = t.clip_at(seq_frame)) return c;
-    for (const auto& t : project_->sequence.video_tracks)
+    for (const auto& t : project_->active_sequence().video_tracks)
         if (const canvas::core::Clip* c = t.clip_at(seq_frame)) return c;
     return nullptr;
 }
@@ -598,7 +598,7 @@ int64_t AudioPipeline::playhead_to_audio_sample(int64_t seq_frame) const {
     if (!clip || clip->media < 0) return 0;
     const double fps_v = media_fps_of(*project_, *clip);
     if (fps_v <= 0.0) return 0;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     if (seq_fps <= 0.0) return 0;
     const double spd = canvas::core::cliprate::effective_rate(*clip);
     return static_cast<int64_t>(std::llround(
@@ -609,13 +609,13 @@ int64_t AudioPipeline::playhead_to_audio_sample(int64_t seq_frame) const {
 
 int64_t AudioPipeline::audio_sample_to_seq_frame(int64_t media_sample) const {
     if (!project_ || media_sample < 0) return -1;
-    const canvas::core::Sequence& seq = project_->sequence;
+    const canvas::core::Sequence& seq = project_->active_sequence();
     for (const canvas::core::Track& t : seq.audio_tracks) {
         for (const canvas::core::Clip& c : t.clips) {
             if (c.media < 0 || !c.enabled) continue;
             const double fps_v = media_fps_of(*project_, c);
             if (fps_v <= 0.0) continue;
-            const double seq_fps = project_->sequence.fps;
+            const double seq_fps = project_->active_sequence().fps;
             if (seq_fps <= 0.0) continue;
             const double secs_in =
                 static_cast<double>(media_sample) / rate_ - static_cast<double>(c.src_in) / fps_v;
@@ -721,7 +721,7 @@ void AudioPipeline::play_step(int64_t seq_frame, double step_seconds, bool seek_
     }
 
     const canvas::core::Clip* clip = sources[0].clip;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     const double fps_v = sources[0].fps;
     if (fps_v <= 0.0) {
         warn("media fps unknown for audio clip");
@@ -885,7 +885,7 @@ void AudioPipeline::feed_scrub_audio(int64_t target) {
     if (ait == decoders_.end() || !ait->second->has_audio()) return;
     const double fps_v = media_fps_of(*project_, *clip);
     if (fps_v <= 0.0) return;
-    const double seq_fps = project_->sequence.fps;
+    const double seq_fps = project_->active_sequence().fps;
     if (seq_fps <= 0.0) return;
     const int64_t base_sample = static_cast<int64_t>(std::llround(
         (static_cast<double>(clip->src_in) / fps_v +
@@ -943,7 +943,7 @@ void AudioPipeline::advance_feed_for_drop(int64_t new_frame) {
     if (!ac || ac->media < 0) return;
     const double afps = media_fps_of(*project_, *ac);
     if (afps > 0.0) {
-        const double seq_fps = project_->sequence.fps;
+        const double seq_fps = project_->active_sequence().fps;
         if (seq_fps > 0.0) {
             const int64_t asrc = static_cast<int64_t>(std::llround(
                 (static_cast<double>(ac->src_in) / afps +

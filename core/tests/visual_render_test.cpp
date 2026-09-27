@@ -107,7 +107,7 @@ static bool make_source(const std::string& path, int w, int h, int fps, int fram
 
 static Project make_project(const std::string& path) {
     Project p;
-    p.sequence.fps = 30.0;
+    p.active_sequence().fps = 30.0;
     MediaEntry m;
     m.id = 0;
     m.path = path;
@@ -119,7 +119,7 @@ static Project make_project(const std::string& path) {
     Track v1;
     v1.kind = Track::Kind::Video;
     v1.name = "V1";
-    p.sequence.video_tracks.push_back(std::move(v1));
+    p.active_sequence().video_tracks.push_back(std::move(v1));
     return p;
 }
 
@@ -141,7 +141,7 @@ int main() {
     a.tl_in = 0;
     a.src_in = 0;
     a.src_out = 24;
-    auto cmd = place_clip(p.sequence, Track::Kind::Video, 0, a, Placement::Overwrite);
+    auto cmd = place_clip(p.active_sequence(), Track::Kind::Video, 0, a, Placement::Overwrite);
     if (!cmd) {
         report(false, "visual-export: place clip");
         return 1;
@@ -157,8 +157,8 @@ int main() {
         if (c != 0) { non_black = true; break; }
     report(non_black, "visual-export: identity frame carries decoded pixels");
 
-    const ClipId id = p.sequence.video_tracks[0].clips[0].id;
-    cmd = set_clip_transform(p.sequence, Track::Kind::Video, 0, id,
+    const ClipId id = p.active_sequence().video_tracks[0].clips[0].id;
+    cmd = set_clip_transform(p.active_sequence(), Track::Kind::Video, 0, id,
                              1.0f, 1.0f, 0.0, 0.0, 0.0f, 0.0, 0.0, true, false);
     report(cmd != nullptr, "visual-export: set flip transform");
     VideoFramePtr flipped = render_video_frame(p, 4, 64, 64, nullptr);
@@ -169,12 +169,12 @@ int main() {
             for (int x = 0; x < 64; ++x)
                 if (std::memcmp(px(flipped, x, y), px(ident, 63 - x, y), 3) != 0) mirror = false;
         report(mirror, "visual-export: flip_h mirrors the pixels exactly");
-        cmd = set_clip_transform(p.sequence, Track::Kind::Video, 0, id,
+        cmd = set_clip_transform(p.active_sequence(), Track::Kind::Video, 0, id,
                                  1.0f, 1.0f, 0.0, 0.0, 0.0f, 0.0, 0.0, false, false);
         report(cmd != nullptr, "visual-export: reset transform");
     }
 
-    cmd = set_clip_transform(p.sequence, Track::Kind::Video, 0, id,
+    cmd = set_clip_transform(p.active_sequence(), Track::Kind::Video, 0, id,
                              0.5f, 0.5f, 0.0, 0.0, 0.0f, 0.0, 0.0, false, false);
     report(cmd != nullptr, "visual-export: set scale 0.5");
     VideoFramePtr scaled = render_video_frame(p, 4, 64, 64, nullptr);
@@ -204,9 +204,9 @@ int main() {
                "visual-export: scaled 0.5 keeps the center lit");
     }
 
-    cmd = set_clip_transform(p.sequence, Track::Kind::Video, 0, id,
+    cmd = set_clip_transform(p.active_sequence(), Track::Kind::Video, 0, id,
                              1.0f, 1.0f, 0.0, 0.0, 0.0f, 0.0, 0.0, false, false);
-    cmd = set_clip_composite(p.sequence, Track::Kind::Video, 0, id, 0.5f, BlendMode::Normal);
+    cmd = set_clip_composite(p.active_sequence(), Track::Kind::Video, 0, id, 0.5f, BlendMode::Normal);
     report(cmd != nullptr, "visual-export: set opacity 0.5");
     VideoFramePtr half = render_video_frame(p, 4, 64, 64, nullptr);
     report(half != nullptr, "visual-export: half-opacity render succeeds");

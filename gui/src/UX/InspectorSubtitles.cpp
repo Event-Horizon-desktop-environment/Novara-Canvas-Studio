@@ -78,7 +78,7 @@ int size_to_percent(const float size) {
 constexpr int kPosRangePx = 550;
 
 std::pair<int, int> project_frame_dims(const canvas::core::Project& project) {
-    for (const auto& t : project.sequence.video_tracks) {
+    for (const auto& t : project.active_sequence().video_tracks) {
         for (const auto& c : t.clips) {
             if (c.media < 0) continue;
             const auto* me = project.media_by_id(c.media);
@@ -446,7 +446,7 @@ sc.shadow_alpha = sh_alpha.slider;
             return std::find(want.begin(), want.end(), id) != want.end();
         };
         std::size_t vi = 0;
-        for (const Track& t : mw.project_->sequence.video_tracks) {
+        for (const Track& t : mw.project_->active_sequence().video_tracks) {
             for (const Clip& c : t.clips) {
                 if (wanted(c.id) && c.has_title()) {
                     out.push_back({Track::Kind::Video, vi, c.id, c});
@@ -458,7 +458,7 @@ sc.shadow_alpha = sh_alpha.slider;
     };
     const auto resolve_caption = [&mw](const canvas::core::ClipId id) -> std::optional<Clip> {
         if (!mw.project_) return std::nullopt;
-        for (const Track& t : mw.project_->sequence.video_tracks)
+        for (const Track& t : mw.project_->active_sequence().video_tracks)
             for (const Clip& c : t.clips)
                 if (c.id == id && c.has_title()) return c;
         return std::nullopt;
@@ -469,14 +469,14 @@ sc.shadow_alpha = sh_alpha.slider;
         for (const auto& target : caption_targets()) {
             Clip::Title t = target.clip.title;
             tweak(t);
-            auto cmd = canvas::core::set_clip_title(mw.project_->sequence, target.kind,
+            auto cmd = canvas::core::set_clip_title(mw.project_->active_sequence(), target.kind,
                                                     target.track, target.id, t);
             if (cmd) cmds.push_back(std::move(cmd));
         }
         if (cmds.empty()) return;
         auto group = std::make_unique<canvas::core::GroupCommand>(
             MainWindow::tr("Edit Captions").toStdString(), std::move(cmds));
-        mw.undo_.record(std::move(group));
+        mw.active_undo().record(std::move(group));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -503,12 +503,12 @@ sc.shadow_alpha = sh_alpha.slider;
             tweak(*cur);
             if (sc.live.transform) {
                 auto cmd = canvas::core::set_clip_transform(
-                    mw.project_->sequence, start.kind, start.track, start.id, cur->scale_x,
+                    mw.project_->active_sequence(), start.kind, start.track, start.id, cur->scale_x,
                     cur->scale_y, cur->pos_x, cur->pos_y, cur->rotation_deg, cur->anchor_dx,
                     cur->anchor_dy, cur->flip_h, cur->flip_v);
                 if (!cmd) continue;
             } else {
-                auto cmd = canvas::core::set_clip_title(mw.project_->sequence, start.kind,
+                auto cmd = canvas::core::set_clip_title(mw.project_->active_sequence(), start.kind,
                                                         start.track, start.id, cur->title);
                 if (!cmd) continue;
             }
@@ -537,20 +537,20 @@ sc.shadow_alpha = sh_alpha.slider;
                                   start.clip.flip_v == cur->flip_v;
                 if (same) continue;
                 canvas::core::set_clip_transform(
-                    mw.project_->sequence, start.kind, start.track, start.id, start.clip.scale_x,
+                    mw.project_->active_sequence(), start.kind, start.track, start.id, start.clip.scale_x,
                     start.clip.scale_y, start.clip.pos_x, start.clip.pos_y,
                     start.clip.rotation_deg, start.clip.anchor_dx, start.clip.anchor_dy,
                     start.clip.flip_h, start.clip.flip_v);
                 auto cmd = canvas::core::set_clip_transform(
-                    mw.project_->sequence, start.kind, start.track, start.id, cur->scale_x,
+                    mw.project_->active_sequence(), start.kind, start.track, start.id, cur->scale_x,
                     cur->scale_y, cur->pos_x, cur->pos_y, cur->rotation_deg, cur->anchor_dx,
                     cur->anchor_dy, cur->flip_h, cur->flip_v);
                 if (cmd) cmds.push_back(std::move(cmd));
             } else {
                 if (start.clip.title == cur->title) continue;
-                canvas::core::set_clip_title(mw.project_->sequence, start.kind, start.track,
+                canvas::core::set_clip_title(mw.project_->active_sequence(), start.kind, start.track,
                                              start.id, start.clip.title);
-                auto cmd = canvas::core::set_clip_title(mw.project_->sequence, start.kind,
+                auto cmd = canvas::core::set_clip_title(mw.project_->active_sequence(), start.kind,
                                                         start.track, start.id, cur->title);
                 if (cmd) cmds.push_back(std::move(cmd));
             }
@@ -558,7 +558,7 @@ sc.shadow_alpha = sh_alpha.slider;
         if (cmds.empty()) return;
         auto group = std::make_unique<canvas::core::GroupCommand>(
             MainWindow::tr("Edit Captions").toStdString(), std::move(cmds));
-        mw.undo_.record(std::move(group));
+        mw.active_undo().record(std::move(group));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -599,14 +599,14 @@ sc.shadow_alpha = sh_alpha.slider;
         for (const auto& target : caption_targets()) {
             const Clip& c = target.clip;
             auto cmd = canvas::core::set_clip_transform(
-                mw.project_->sequence, target.kind, target.track, target.id, c.scale_x, c.scale_y,
+                mw.project_->active_sequence(), target.kind, target.track, target.id, c.scale_x, c.scale_y,
                 px, py, c.rotation_deg, c.anchor_dx, c.anchor_dy, c.flip_h, c.flip_v);
             if (cmd) cmds.push_back(std::move(cmd));
         }
         if (cmds.empty()) return;
         auto group = std::make_unique<canvas::core::GroupCommand>(
             MainWindow::tr("Edit Captions").toStdString(), std::move(cmds));
-        mw.undo_.record(std::move(group));
+        mw.active_undo().record(std::move(group));
         mw.has_unsaved_changes_ = true;
         mw.push_snapshot();
         mw.refresh_timeline();
@@ -639,7 +639,7 @@ sc.shadow_alpha = sh_alpha.slider;
     QObject::connect(sc.select_all, &QToolButton::clicked, &mw, [&mw, &sc]() {
         if (!mw.project_) return;
         std::vector<canvas::core::ClipId> ids;
-        for (const Track& t : mw.project_->sequence.video_tracks)
+        for (const Track& t : mw.project_->active_sequence().video_tracks)
             for (const Clip& c : t.clips)
                 if (c.has_title()) ids.push_back(c.id);
         if (ids.empty()) return;
@@ -770,14 +770,14 @@ sc.shadow_alpha = sh_alpha.slider;
             for (const auto& target : caption_targets()) {
                 Clip::Title t = target.clip.title;
                 apply(t, chosen);
-                auto cmd = canvas::core::set_clip_title(mw.project_->sequence, target.kind,
+                auto cmd = canvas::core::set_clip_title(mw.project_->active_sequence(), target.kind,
                                                         target.track, target.id, t);
                 if (cmd) cmds.push_back(std::move(cmd));
             }
             if (cmds.empty()) return;
             auto group = std::make_unique<canvas::core::GroupCommand>(
                 MainWindow::tr("Edit Captions").toStdString(), std::move(cmds));
-            mw.undo_.record(std::move(group));
+            mw.active_undo().record(std::move(group));
             mw.has_unsaved_changes_ = true;
             mw.push_snapshot();
             mw.refresh_timeline();
@@ -856,7 +856,7 @@ void update_inspector_subtitles(MainWindow& mw) {
         if (w) w->setEnabled(has);
     if (sc->select_all) {
         bool any_caption = false;
-        for (const Track& t : mw.project_->sequence.video_tracks)
+        for (const Track& t : mw.project_->active_sequence().video_tracks)
             for (const Clip& c : t.clips)
                 if (c.has_title()) {
                     any_caption = true;
@@ -874,7 +874,7 @@ void update_inspector_subtitles(MainWindow& mw) {
                                                                    QStringLiteral(" ⏎ "));
     if (text.size() > 120) text = text.left(120) + QStringLiteral("…");
     sc->preview->setText(text);
-    const double fps = mw.project_->sequence.fps;
+    const double fps = mw.project_->active_sequence().fps;
     sc->meta->setText(QStringLiteral("%1 → %2 · %3%4")
                           .arg(timecode(clip.tl_in, fps), timecode(clip.tl_out, fps),
                                kind == Track::Kind::Video ? QStringLiteral("V")
@@ -882,7 +882,7 @@ void update_inspector_subtitles(MainWindow& mw) {
                           .arg(index + 1));
     const std::vector<canvas::core::ClipId>& wanted = mw.selected_clip_ids_;
     int multi = 0;
-    for (const Track& t : mw.project_->sequence.video_tracks)
+    for (const Track& t : mw.project_->active_sequence().video_tracks)
         for (const Clip& c : t.clips)
             if (c.has_title() && std::find(wanted.begin(), wanted.end(), c.id) != wanted.end())
                 ++multi;

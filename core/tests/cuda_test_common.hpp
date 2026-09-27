@@ -316,7 +316,7 @@ inline canvas::core::Project make_single_clip_project(const TestClip& clip,
                                                       int64_t frames) {
     canvas::core::Project p;
     p.name = "CudaEnc";
-    p.sequence.fps = clip.fps;
+    p.active_sequence().fps = clip.fps;
     canvas::core::MediaEntry m;
     m.id = 0;
     m.path = clip.path;
@@ -328,14 +328,14 @@ inline canvas::core::Project make_single_clip_project(const TestClip& clip,
     canvas::core::Track v;
     v.kind = canvas::core::Track::Kind::Video;
     v.name = "V1";
-    p.sequence.video_tracks.push_back(std::move(v));
+    p.active_sequence().video_tracks.push_back(std::move(v));
     canvas::core::Clip clip_ent;
     clip_ent.media = 0;
     clip_ent.name = "A";
     clip_ent.tl_in = 0;
     clip_ent.src_in = 0;
     clip_ent.src_out = frames;
-    canvas::core::place_clip(p.sequence, canvas::core::Track::Kind::Video, 0,
+    canvas::core::place_clip(p.active_sequence(), canvas::core::Track::Kind::Video, 0,
                              clip_ent, canvas::core::Placement::Overwrite);
     return p;
 }
@@ -343,7 +343,7 @@ inline canvas::core::Project make_single_clip_project(const TestClip& clip,
 inline canvas::core::Project make_feature_project(const TestClip& clip,
                                                   int64_t frames) {
     canvas::core::Project p = make_single_clip_project(clip, frames);
-    canvas::core::Clip& c = p.sequence.video_tracks[0].clips[0];
+    canvas::core::Clip& c = p.active_sequence().video_tracks[0].clips[0];
 
     canvas::core::Clip::Title t;
     t.text = "NOVA CANVAS SUBTITLE TEST";

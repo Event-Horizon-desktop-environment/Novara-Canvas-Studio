@@ -204,6 +204,7 @@ struct Bookmark {
 };
 
 struct Sequence {
+    std::string name = "Timeline 1";
     double fps = 30.0;
     std::vector<Track> video_tracks;
     std::vector<Track> audio_tracks;

@@ -461,6 +461,18 @@ set_target_properties(canvas_loudness_normalize_test PROPERTIES AUTOMOC OFF AUTO
 add_test(NAME loudness_normalize COMMAND canvas_loudness_normalize_test)
 set_tests_properties(loudness_normalize PROPERTIES TIMEOUT 300)
 
+add_executable(canvas_audio_codecs_test tests/audio_codecs_test.cpp)
+target_link_libraries(canvas_audio_codecs_test PRIVATE canvas_core)
+set_target_properties(canvas_audio_codecs_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME audio_codecs COMMAND canvas_audio_codecs_test)
+set_tests_properties(audio_codecs PROPERTIES TIMEOUT 300)
+
+add_executable(canvas_timelines_test tests/timelines_test.cpp)
+target_link_libraries(canvas_timelines_test PRIVATE canvas_core)
+set_target_properties(canvas_timelines_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
+add_test(NAME timelines COMMAND canvas_timelines_test)
+set_tests_properties(timelines PROPERTIES TIMEOUT 300)
+
 add_executable(canvas_caption_burn_test tests/caption_burn_test.cpp)
 target_link_libraries(canvas_caption_burn_test PRIVATE canvas_core)
 set_target_properties(canvas_caption_burn_test PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
