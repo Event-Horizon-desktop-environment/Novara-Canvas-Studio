@@ -45,6 +45,7 @@ FetchContent_Declare(whispercpp
     GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp.git
     GIT_TAG v1.9.4
     GIT_SHALLOW TRUE
+    GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(whispercpp)
 message(STATUS "Novara Canvas whisper.cpp engine: pinned v1.9.4 (transcribe seam)")
@@ -75,9 +76,11 @@ if(CUDAToolkit_FOUND)
     enable_language(CUDA)
     set(CANVAS_CUDA_ENABLED ON)
     else()
+        file(GLOB CANVAS_CUDA_BIN_GLOB "/usr/local/cuda-*/bin" "/opt/cuda-*/bin")
         find_program(CANVAS_NVCC nvcc
             HINTS "${CUDA_HOME}/bin" "${CUDACXX}" ENV CUDACXX
                   /opt/cuda/bin /usr/local/cuda/bin /usr/cuda/bin
+                  ${CANVAS_CUDA_BIN_GLOB}
             PATH_SUFFIXES bin
             NO_DEFAULT_PATH
         )

@@ -8,18 +8,21 @@ JOBS="$(nproc 2>/dev/null || echo 4)"
 INSTALL_DEPS=0
 CLEAN_BUILD=0
 RUN_BUILD=1
+PRINT_CUDA_ENV=0
+AUTO_DEPS_APPROVED=0
+MISSING_PKGS=()
 
 if [[ -t 1 ]]; then
-    BOLD="\033[1m"
-    DIM="\033[2m"
-    RESET="\033[0m"
-    RED="\033[1;31m"
-    GREEN="\033[1;32m"
-    YELLOW="\033[1;33m"
-    BLUE="\033[1;34m"
-    MAGENTA="\033[1;35m"
-    CYAN="\033[1;36m"
-    GRAY="\033[90m"
+    BOLD=$'\033[1m'
+    DIM=$'\033[2m'
+    RESET=$'\033[0m'
+    RED=$'\033[1;31m'
+    GREEN=$'\033[1;32m'
+    YELLOW=$'\033[1;33m'
+    BLUE=$'\033[1;34m'
+    MAGENTA=$'\033[1;35m'
+    CYAN=$'\033[1;36m'
+    GRAY=$'\033[90m'
 else
     BOLD="" DIM="" RESET="" RED="" GREEN="" YELLOW="" BLUE=""
     MAGENTA="" CYAN="" GRAY=""
@@ -113,12 +116,26 @@ FEDORA_DEPS=(
     meson
     gcc-c++
     pkgconf
+    pkgconf-pkg-config
+    git
     qt6-qtbase-devel
     qt6-qtsvg-devel
-    ffmpeg-devel
+    libva-devel
+    libglvnd-devel
     pipewire-devel
     alsa-lib-devel
+    vulkan-headers
+    vulkan-loader-devel
+)
+
+FEDORA_JSON_CANDIDATES=(
+    json-devel
     nlohmann-json-devel
+)
+
+FEDORA_FFMPEG_CANDIDATES=(
+    ffmpeg-devel
+    ffmpeg-free-devel
 )
 
 ARCH_DEPS=(
@@ -172,10 +189,149 @@ run_elevated() {
     done
 }
 
+first_available_pkg() {
+    local cand
+    for cand in "$@"; do
+        if dnf list --available "$cand" 2>/dev/null | grep -Eq "^${cand}\."; then
+            printf '%s\n' "$cand"
+            return 0
+        fi
+    done
+    printf '%s\n' "$1"
+    return 0
+}
+
+pkg_installed() {
+    case "$DISTRO_FAMILY" in
+        fedora) rpm -q "$1" &>/dev/null ;;
+        arch) pacman -Q "$1" &>/dev/null ;;
+        debian|pikaos) dpkg -s "$1" &>/dev/null ;;
+        *) return 0 ;;
+    esac
+}
+
+base_dep_list() {
+    case "$DISTRO_FAMILY" in
+        fedora) printf '%s\n' "${FEDORA_DEPS[@]}" ;;
+        arch) printf '%s\n' "${ARCH_DEPS[@]}" ;;
+        debian) printf '%s\n' "${DEBIAN_DEPS[@]}" ;;
+        pikaos) printf '%s\n' "${PIKAOS_DEPS[@]}" ;;
+    esac
+}
+
+collect_missing_pkgs() {
+    MISSING_PKGS=()
+    local p
+    while IFS= read -r p; do
+        if ! pkg_installed "$p"; then
+            MISSING_PKGS+=("$p")
+        fi
+    done < <(base_dep_list)
+    if [[ "$DISTRO_FAMILY" == "fedora" ]]; then
+        if ! pkg_installed json-devel && ! pkg_installed nlohmann-json-devel; then
+            MISSING_PKGS+=("$(first_available_pkg "${FEDORA_JSON_CANDIDATES[@]}")")
+        fi
+        if ! pkg_installed ffmpeg-devel && ! pkg_installed ffmpeg-free-devel; then
+            MISSING_PKGS+=("$(first_available_pkg "${FEDORA_FFMPEG_CANDIDATES[@]}")")
+        fi
+    fi
+}
+
+probe_cuda() {
+    if command -v nvcc &>/dev/null; then
+        return 0
+    fi
+    local -a probe_dirs=()
+    if [[ -n "${CUDACXX:-}" ]]; then
+        if [[ -x "$CUDACXX" ]]; then
+            probe_dirs+=("$(dirname "$CUDACXX")")
+        elif [[ -x "$CUDACXX/bin/nvcc" ]]; then
+            probe_dirs+=("$CUDACXX/bin")
+        fi
+    fi
+    local env_dir
+    for env_dir in "${CUDA_HOME:-}" "${CUDA_PATH:-}"; do
+        if [[ -n "$env_dir" && -x "$env_dir/bin/nvcc" ]]; then
+            probe_dirs+=("$env_dir/bin")
+        fi
+    done
+    local fixed_dir
+    for fixed_dir in /usr/local/cuda/bin /opt/cuda/bin /usr/cuda/bin; do
+        probe_dirs+=("$fixed_dir")
+    done
+    local glob_dir
+    for glob_dir in /usr/local/cuda-*/bin /opt/cuda-*/bin; do
+        if [[ -x "$glob_dir/nvcc" ]]; then
+            probe_dirs+=("$glob_dir")
+        fi
+    done
+    local bin_dir
+    for bin_dir in "${probe_dirs[@]}"; do
+        if [[ -x "$bin_dir/nvcc" ]]; then
+            export PATH="$bin_dir:$PATH"
+            if [[ -z "${CUDA_HOME:-}" ]]; then
+                export CUDA_HOME="$(dirname "$bin_dir")"
+            fi
+            info "Found CUDA at $(dirname "$bin_dir") — enabling GPU encode path."
+            return 0
+        fi
+    done
+    return 1
+}
+
+cuda_hint() {
+    if command -v nvidia-smi &>/dev/null; then
+        warn "NVIDIA GPU present but no CUDA toolkit (nvcc) found — building without the NVENC GPU fast path."
+    else
+        info "No CUDA toolkit (nvcc) found — building without the NVENC GPU fast path."
+        return 0
+    fi
+    if [[ "${DISTRO_FAMILY:-}" == "fedora" ]]; then
+        info "Install it with ./build.sh -d (offers the NVIDIA CUDA repo + cuda-toolkit) or manually from developer.nvidia.com/cuda-downloads, then rebuild."
+    fi
+}
+
+cuda_repo_for_fedora() {
+    local v
+    for v in "${VERSION_ID:-}" 44 43 42 41 40; do
+        if [[ -n "$v" ]] && curl -fsI "https://developer.download.nvidia.com/compute/cuda/repos/fedora${v}/x86_64/cuda-fedora${v}.repo" >/dev/null 2>&1; then
+            printf '%s\n' "$v"
+            return 0
+        fi
+    done
+    return 1
+}
+
+install_cuda_fedora() {
+    if ! command -v nvidia-smi &>/dev/null; then
+        return 0
+    fi
+    if command -v nvcc &>/dev/null; then
+        return 0
+    fi
+    warn "NVIDIA GPU detected but the CUDA toolkit (nvcc) is not installed."
+    info "The NVIDIA .run driver ships the driver only — nvcc, cuda_runtime.h and cudart come from the separate CUDA toolkit."
+    read -r -p "  Enable the NVIDIA CUDA repo and install cuda-toolkit (~4GB)? [y/N] " answer || true
+    case "${answer,,}" in
+        y|yes)
+            ;;
+        *)
+            info "Skipping CUDA toolkit install."
+            return 0
+            ;;
+    esac
+    cuda_ver="$(cuda_repo_for_fedora || true)"
+    if [[ -z "$cuda_ver" ]]; then
+        warn "No reachable NVIDIA CUDA repo for this Fedora release — install the toolkit manually from developer.nvidia.com/cuda-downloads."
+        return 0
+    fi
+    run_elevated dnf config-manager addrepo --from-repofile "https://developer.download.nvidia.com/compute/cuda/repos/fedora${cuda_ver}/x86_64/cuda-fedora${cuda_ver}.repo"
+    run_elevated dnf install -y cuda-toolkit
+    ok "CUDA toolkit installed."
+}
+
 install_deps() {
     step "Installing Dependencies"
-
-    local -n deps=DISTRO_DEPS
 
     case "$DISTRO_FAMILY" in
         fedora)  local -n deps=FEDORA_DEPS  ;;
@@ -184,36 +340,49 @@ install_deps() {
         pikaos)  local -n deps=PIKAOS_DEPS  ;;
     esac
 
+    local -a pkgs=("${deps[@]}")
+
+    if [[ "$DISTRO_FAMILY" == "fedora" ]]; then
+        pkgs+=("$(first_available_pkg "${FEDORA_JSON_CANDIDATES[@]}")")
+        pkgs+=("$(first_available_pkg "${FEDORA_FFMPEG_CANDIDATES[@]}")")
+    fi
+
     info "Packages to install:"
-    for pkg in "${deps[@]}"; do
+    for pkg in "${pkgs[@]}"; do
         printf "    ${DIM}•${RESET} %s\n" "$pkg"
     done
     echo
 
-    read -r -p "  ${YELLOW}?${RESET} Install these dependencies now? [y/N] " answer
-    case "${answer,,}" in
-        y|yes)
-            ;;
-        *)
-            warn "Dependency installation cancelled."
-            return 1
-            ;;
-    esac
+    if [[ "${AUTO_DEPS_APPROVED:-0}" -eq 0 ]]; then
+        read -r -p "  ${YELLOW}?${RESET} Install these dependencies now? [y/N] " answer || true
+        case "${answer,,}" in
+            y|yes)
+                ;;
+            *)
+                warn "Dependency installation cancelled."
+                return 1
+                ;;
+        esac
+    fi
 
     pick_elevator
 
     case "$PKG_MGR" in
         dnf)
-            run_elevated dnf install -y "${deps[@]}"
+            run_elevated dnf install -y "${pkgs[@]}"
             ;;
         pacman)
-            run_elevated pacman -Syu --noconfirm "${deps[@]}"
+            run_elevated pacman -Syu --noconfirm "${pkgs[@]}"
             ;;
         apt)
             run_elevated apt update -qq
-            run_elevated apt install -y "${deps[@]}"
+            run_elevated apt install -y "${pkgs[@]}"
             ;;
     esac
+
+    if [[ "$DISTRO_FAMILY" == "fedora" ]]; then
+        install_cuda_fedora
+    fi
 
     ok "All dependencies installed."
 }
@@ -235,18 +404,15 @@ install_system() {
 do_build() {
     step "Building Nova Canvas Studio"
 
-    local cmake_args=("-DCMAKE_BUILD_TYPE=$BUILD_TYPE")
+    local cmake_args=("-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DFETCHCONTENT_QUIET=OFF")
     local generator="Ninja"
 
-    if ! command -v nvcc &>/dev/null; then
-        for cuda_dir in "${CUDA_HOME:-}" /usr/local/cuda /opt/cuda /usr/cuda; do
-            if [[ -n "$cuda_dir" && -x "$cuda_dir/bin/nvcc" ]]; then
-                info "Found CUDA at $cuda_dir — enabling GPU encode path."
-                export CUDA_HOME="$cuda_dir"
-                export PATH="$cuda_dir/bin:$PATH"
-                break
-            fi
-        done
+    if probe_cuda; then
+        if [[ -n "${CUDA_HOME:-}" ]]; then
+            cmake_args+=("-DCUDAToolkit_ROOT=$CUDA_HOME")
+        fi
+    else
+        cuda_hint
     fi
 
     if command -v ninja &>/dev/null; then
@@ -261,11 +427,36 @@ do_build() {
         rm -rf "$BUILD_DIR"
     fi
 
+    if [[ -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+        cached_src="$(grep -E '^CMAKE_HOME_DIRECTORY:INTERNAL=' "$BUILD_DIR/CMakeCache.txt" 2>/dev/null | cut -d= -f2- || true)"
+        live_src="$(cd "$(dirname "$0")" && pwd -P)"
+        cached_src_canon="$(realpath "$cached_src" 2>/dev/null || printf '%s' "$cached_src")"
+        if [[ -n "$cached_src" && "$cached_src_canon" != "$live_src" ]]; then
+            warn "Build cache points at $cached_src but this checkout resolves to $live_src."
+            read -r -p "  Wipe $BUILD_DIR and reconfigure from scratch? [y/N] " answer || true
+            case "${answer,,}" in
+                y|yes)
+                    info "Removing stale $BUILD_DIR ..."
+                    rm -rf "$BUILD_DIR"
+                    ;;
+                *)
+                    fail "Stale build cache — re-run with -c to clean, or build from $cached_src."
+                    ;;
+            esac
+        fi
+    fi
+
     if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
         info "First-time config: cmake -B $BUILD_DIR ${cmake_args[*]}"
+        cfg_status=0
         cmake -B "$BUILD_DIR" "${cmake_args[@]}" 2>&1 | while IFS= read -r line; do
             printf "    ${DIM}%s${RESET}\n" "$line"
-        done
+        done || cfg_status=$?
+        if [[ "$cfg_status" -ne 0 ]]; then
+            warn "cmake configure failed (exit $cfg_status)."
+            info "Missing Qt6 or system libraries? Install them with: ./build.sh -d -r (or: just deps)"
+            fail "Configure step failed."
+        fi
     else
         info "Already configured — rebuilding incrementally."
         local cached_type
@@ -313,6 +504,7 @@ ${BOLD}Options:${RESET}
   -d, --install-deps    Install build dependencies via system package manager
   -c, --clean           Remove build directory before configuring
   -r, --no-build        Skip build step (useful with -d only)
+  --print-cuda-env      Print export lines exposing any discovered nvcc, then exit
   -t, --type TYPE       Build type: Release, Debug, RelWithDebInfo (default: Release)
   -j, --jobs N          Parallel build jobs (default: $(nproc 2>/dev/null || echo 4))
   -h, --help            Show this help message
@@ -324,6 +516,7 @@ while [[ $# -gt 0 ]]; do
         -d|--install-deps) INSTALL_DEPS=1; shift ;;
         -c|--clean)        CLEAN_BUILD=1; shift ;;
         -r|--no-build)     RUN_BUILD=0; shift ;;
+        --print-cuda-env)  PRINT_CUDA_ENV=1; shift ;;
         -t|--type)         BUILD_TYPE="$2"; shift 2 ;;
         -j|--jobs)         JOBS="$2"; shift 2 ;;
         -h|--help)         usage; exit 0 ;;
@@ -331,8 +524,43 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$PRINT_CUDA_ENV" -eq 1 ]]; then
+    if probe_cuda >/dev/null 2>&1; then
+        cuda_bin="$(dirname "$(command -v nvcc)")"
+        cuda_root="$(dirname "$cuda_bin")"
+        printf 'export PATH="%s:${PATH}"\n' "$cuda_bin"
+        printf 'export CUDA_HOME="%s"\n' "$cuda_root"
+        printf 'export CUDAToolkit_ROOT="%s"\n' "$cuda_root"
+    fi
+    exit 0
+fi
+
 banner
 detect_distro
+
+if [[ "$INSTALL_DEPS" -eq 0 && "$RUN_BUILD" -eq 1 ]]; then
+    collect_missing_pkgs
+    if [[ "${#MISSING_PKGS[@]}" -gt 0 ]]; then
+        warn "Missing system packages for $DISTRO_FAMILY:"
+        for m in "${MISSING_PKGS[@]}"; do
+            printf "    ${DIM}•${RESET} %s\n" "$m"
+        done
+        if [[ -t 0 ]]; then
+            read -r -p "  Install them now? [y/N] " answer || true
+            case "${answer,,}" in
+                y|yes)
+                    AUTO_DEPS_APPROVED=1
+                    INSTALL_DEPS=1
+                    ;;
+                *)
+                    info "Continuing without them — configure fails if anything required is absent."
+                    ;;
+            esac
+        else
+            info "Run ./build.sh -d -r (or: just deps) to install them."
+        fi
+    fi
+fi
 
 if [[ "$INSTALL_DEPS" -eq 1 ]]; then
     install_deps

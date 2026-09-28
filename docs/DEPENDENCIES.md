@@ -64,8 +64,14 @@ VAAPI, QSV), so you do not need all of them installed to build.
 `rgbaToNV12`, `nv12Resize`, `nv12GradeResize`, and `nv12TitleBlend`, which
 fuses title-sprite compositing into the resize/grade launch). The colour maths
 is BT.709 (limited range), matching the shared `gpu/colorspace.hpp`. Not on the
-PATH by default, so `build.sh` probes `$CUDA_HOME`, `/usr/local/cuda`,
-`/opt/cuda`, `/usr/cuda` for `nvcc` and exposes it to the build. The `.cu`
+PATH by default, so `build.sh` probes `nvcc` on `PATH` plus `$CUDACXX`,
+`$CUDA_HOME`, `$CUDA_PATH`, the fixed `/usr/local/cuda`, `/opt/cuda`,
+`/usr/cuda` prefixes, and versioned `/usr/local/cuda-*/bin` and
+`/opt/cuda-*/bin` installs (an NVIDIA driver showing up in `nvidia-smi` is not
+enough — the toolkit with `nvcc` is a separate install), then hands the result
+to CMake via `CUDAToolkit_ROOT` so `sudo`'s stripped `PATH` cannot hide it.
+`just configure-release` / `just install` reuse the same probe through
+`./build.sh --print-cuda-env`. The `.cu`
 file is compiled with `-allow-unsupported-compiler` because nvcc lags the
 newest GCC. Without CUDA the exporter gracefully falls back to CPU encoding.
 
@@ -93,19 +99,46 @@ local transcription, rnnoise powers Voice Isolation; both are linked into
 
 ## Package lists by distribution
 
-`build.sh -d` installs exactly these (after asking for confirmation and
-elevating via `pkexec` or `sudo`). The versioned package names track the
+`build.sh -d` installs the lists below (after asking for confirmation and
+elevating via `pkexec` or `sudo`). On Fedora two entries are resolved at
+install time: the JSON header (`json-devel` on current releases,
+`nlohmann-json-devel` on older ones) and FFmpeg (`ffmpeg-devel` when the
+enabled repos carry it, otherwise Fedora's stripped `ffmpeg-free-devel`).
+The versioned package names track the
 current test machine; drop the old ones in the table below is fine too.
 
 ### Fedora / dnf
 
 ```
-cmake ninja-build meson gcc-c++ pkgconf
+cmake ninja-build meson gcc-c++ pkgconf pkgconf-pkg-config git
 qt6-qtbase-devel qt6-qtsvg-devel
-ffmpeg-devel
+ffmpeg-free-devel (or ffmpeg-devel with RPM Fusion Free enabled)
+libva-devel libglvnd-devel
 pipewire-devel alsa-lib-devel
-nlohmann-json-devel
+json-devel
+vulkan-headers vulkan-loader-devel
 ```
+
+Fedora notes: `ffmpeg-free-devel` lacks the patent-encumbered encoders
+(`libx264` and friends), so the `export_sweep` test skips those combos unless
+you build against RPM Fusion's full `ffmpeg-devel`. The CUDA toolkit is in
+neither Fedora nor RPM Fusion, and the NVIDIA `.run` driver ships the driver
+only (`libcuda`, `nvidia-smi`) — `nvcc`, `cuda_runtime.h` and `cudart` come
+from the separate toolkit. `build.sh -d` offers to install it automatically
+when an NVIDIA GPU is present but `nvcc` is missing: it enables the newest
+reachable NVIDIA CUDA repo (NVIDIA lags prereleases, so on Fedora 45 that is
+currently the `fedora44` repo) and installs `cuda-toolkit`. The manual
+equivalent:
+
+```sh
+sudo dnf config-manager addrepo --from-repofile \
+  https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/cuda-fedora44.repo
+sudo dnf install -y cuda-toolkit
+```
+
+(substitute the newest `fedoraXX` repo that actually exists for your release).
+`nvcc` lands in `/usr/local/cuda/bin`,
+which the build probe finds without further configuration.
 
 ### Arch Linux / pacman
 

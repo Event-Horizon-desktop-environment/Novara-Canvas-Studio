@@ -16,7 +16,9 @@ ctest --test-dir build
 
 - `-d, --install-deps` — installs the dependency list from
   [DEPENDENCIES.md](DEPENDENCIES.md) via your package manager (elevates with
-  pkexec or sudo, asks for confirmation first)
+  pkexec or sudo, asks for confirmation first). You rarely need this flag: a
+  plain `./build.sh` checks the list first and offers to install anything
+  missing (including the NVIDIA CUDA toolkit prompt on Fedora) before building
 - `-c, --clean` — wipes `./build` and reconfigures from scratch
 - `-t, --type TYPE` — `Release` (default), `Debug`, or `RelWithDebInfo`
 - `-j, --jobs N` — parallel build jobs
@@ -82,6 +84,7 @@ The default `./build` is a user-local build. To install into `/usr` there's a
 dedicated release tree and a `justfile` on top:
 
 ```sh
+just deps               # install system deps via ./build.sh -d -r (no build)
 just configure-release   # cmake-configure build-release/ (install prefix /usr)
 just build-release       # compile build-release/ only, no install
 just install             # configure + build + install into /usr (run as root/sudo)
@@ -91,7 +94,9 @@ just uninstall           # removes canvas + legacy event-horizon installs
 
 `just install` runs `cmake --install` without wrapping it in `sudo`, so it has
 to be run as root (or via `sudo just install`); `just install-release` is the
-non-root path. There are also `just test`, `just test-core`, and `just test-gui`.
+non-root path. Neither of them installs system dependencies — a missing-Qt6
+configure error means you skipped `just deps` first. There are also `just test`,
+`just test-core`, and `just test-gui`.
 
 Install layout (matches the `.desktop` launcher):
 
@@ -189,9 +194,26 @@ pool, or use the app's open dialog.
 
 ## Troubleshooting checklists
 
-**CUDA flag not showing in the build summary?** `build.sh` needs `nvcc` on
-`PATH`. It probes `$CUDA_HOME`, `/usr/local/cuda`, `/opt/cuda`, `/usr/cuda`.
-If your toolkit lives somewhere else, set `CUDA_HOME`.
+**CUDA flag not showing in the build summary?** You need the CUDA *toolkit*
+(`nvcc`), not just the NVIDIA driver — `nvidia-smi` working proves nothing
+about `nvcc`. `build.sh` probes `PATH`, `$CUDACXX`, `$CUDA_HOME`,
+`$CUDA_PATH`, the fixed `/usr/local/cuda`, `/opt/cuda`, `/usr/cuda` prefixes,
+and versioned `/usr/local/cuda-*/bin` installs, then exports the hit so
+`sudo`'s stripped `PATH` cannot hide it (the `just` release recipes reuse the
+same probe via `./build.sh --print-cuda-env`). If your toolkit lives somewhere
+else entirely, set `CUDA_HOME`. On Fedora the toolkit is not in the default
+repos and the NVIDIA `.run` driver does not include it — `just deps` offers
+to enable the NVIDIA CUDA repo and install `cuda-toolkit` automatically when
+it sees an NVIDIA GPU without `nvcc`; see [DEPENDENCIES.md](DEPENDENCIES.md)
+for the manual repo setup.
+
+**CMake complains the cache directory is different?** The checkout is being
+accessed through a different absolute path than the one that configured
+`build/` (symlink, bind-mount, or a moved tree). `build.sh` now detects this
+and offers to wipe + reconfigure; `just install`/`just configure-release` do
+not, so pass `-c` (`./build.sh -c`) or delete `build/` and `build-release/`
+manually. Deleting the cache drops the fetched whisper.cpp sources too, so the
+next configure needs network again.
 
 **Warnings with the newest GCC?** The `.cu` kernel file is compiled with
 `-allow-unsupported-compiler` to cope with nvcc lagging behind GCC. If CMake

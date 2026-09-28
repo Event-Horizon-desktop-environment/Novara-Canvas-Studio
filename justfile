@@ -5,16 +5,28 @@ default: build
 build:
     ./build.sh
 
+deps:
+    ./build.sh -d -r
+
 configure-release:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{ justfile_directory() }}"
+    qt6_ok=0
+    for d in /usr/lib64/cmake/Qt6 /usr/lib/cmake/Qt6 /usr/lib/x86_64-linux-gnu/cmake/Qt6; do
+        if [ -f "$d/Qt6Config.cmake" ]; then qt6_ok=1; break; fi
+    done
+    if [ "$qt6_ok" -ne 1 ]; then
+        echo >&2 "error: Qt6 dev packages not found — install system deps first: just deps (or ./build.sh -d -r)"
+        exit 1
+    fi
+    eval "$(./build.sh --print-cuda-env)"
     extra=()
     if [ -d build/_deps/whispercpp-src ]; then
         extra+=( -DFETCHCONTENT_SOURCE_DIR_WHISPERCPP="$PWD/build/_deps/whispercpp-src" )
     fi
     cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr "${extra[@]}"
+        -DCMAKE_INSTALL_PREFIX=/usr -DFETCHCONTENT_QUIET=OFF "${extra[@]}"
 
 build-release:
     cmake --build build-release -j$(nproc)
@@ -23,12 +35,27 @@ install:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{ justfile_directory() }}"
+    if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+        echo >&2 "note: building as root via sudo; to keep build-release/ owned by your user, prefer 'just install-release'"
+    fi
+    qt6_ok=0
+    for d in /usr/lib64/cmake/Qt6 /usr/lib/cmake/Qt6 /usr/lib/x86_64-linux-gnu/cmake/Qt6; do
+        if [ -f "$d/Qt6Config.cmake" ]; then qt6_ok=1; break; fi
+    done
+    if [ "$qt6_ok" -ne 1 ]; then
+        echo >&2 "error: Qt6 dev packages not found — install system deps first: just deps (or ./build.sh -d -r)"
+        exit 1
+    fi
+    if ! pkg-config --exists libva 2>/dev/null; then
+        echo >&2 "note: libva dev files not found — VAAPI zero-copy will stay OFF (install libva-devel to enable it)"
+    fi
+    eval "$(./build.sh --print-cuda-env)"
     extra=()
     if [ -d build/_deps/whispercpp-src ]; then
         extra+=( -DFETCHCONTENT_SOURCE_DIR_WHISPERCPP="$PWD/build/_deps/whispercpp-src" )
     fi
     cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr "${extra[@]}"
+        -DCMAKE_INSTALL_PREFIX=/usr -DFETCHCONTENT_QUIET=OFF "${extra[@]}"
     cmake --build build-release -j"$(nproc)"
     exec cmake --install build-release --strip
 
