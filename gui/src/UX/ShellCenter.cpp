@@ -343,7 +343,7 @@ void build_center_workspace(MainWindow& mw) {
     viewer_frame->setObjectName(QStringLiteral("viewerFrame"));
     apply_theme_style(viewer_frame, &viewer_frame_style);
     auto* viewer_frame_layout = new QVBoxLayout(viewer_frame);
-    viewer_frame_layout->setContentsMargins(8, 8, 8, 8);
+    viewer_frame_layout->setContentsMargins(12, 12, 12, 12);
     auto* monitor_split = new QSplitter(Qt::Horizontal, viewer_frame);
     monitor_split->setObjectName(QStringLiteral("monitorSplit"));
     monitor_split->setChildrenCollapsible(false);
@@ -377,8 +377,8 @@ void build_center_workspace(MainWindow& mw) {
             .arg(css(tokens().surface), css(tokens().border));
     });
     auto* top_scrub_layout = new QHBoxLayout(top_scrub);
-    top_scrub_layout->setContentsMargins(8, 4, 8, 4);
-    top_scrub_layout->setSpacing(8);
+    top_scrub_layout->setContentsMargins(12, 6, 12, 6);
+    top_scrub_layout->setSpacing(10);
     auto* dual_view = new QToolButton(&mw);
     dual_view->setIcon(icon("Dual-View"));
     dual_view->setIconSize(QSize(14, 14));
@@ -450,7 +450,7 @@ void build_center_workspace(MainWindow& mw) {
     auto* guides_cluster = new QWidget(&mw);
     auto* cluster_row = new QHBoxLayout(guides_cluster);
     cluster_row->setContentsMargins(0, 0, 0, 0);
-    cluster_row->setSpacing(3);
+    cluster_row->setSpacing(4);
     cluster_row->addWidget(guides_btn);
     cluster_row->addWidget(guides_sep);
     cluster_row->addWidget(guides_menu_btn);
@@ -547,8 +547,8 @@ void build_center_workspace(MainWindow& mw) {
     viewer_layout->addWidget(top_bar);
     auto* viewer_inner = new QWidget(viewer_column);
     auto* viewer_inner_layout = new QVBoxLayout(viewer_inner);
-    viewer_inner_layout->setContentsMargins(8, 8, 8, 8);
-    viewer_inner_layout->setSpacing(4);
+    viewer_inner_layout->setContentsMargins(12, 12, 12, 12);
+    viewer_inner_layout->setSpacing(8);
     viewer_inner_layout->addWidget(viewer_frame, 1);
     viewer_layout->addWidget(viewer_inner, 1);
 
@@ -574,8 +574,8 @@ void build_center_workspace(MainWindow& mw) {
     apply_theme_style(timeline_frame, &timeline_frame_style);
     constexpr int kTimelineBarRows = 124;
     auto* timeline_frame_layout = new QVBoxLayout(timeline_frame);
-    timeline_frame_layout->setContentsMargins(8, 8, 8, 8);
-    timeline_frame_layout->setSpacing(4);
+    timeline_frame_layout->setContentsMargins(12, 12, 12, 12);
+    timeline_frame_layout->setSpacing(8);
     timeline_frame_layout->addWidget(contextual_bar);
     timeline_frame_layout->addWidget(transport);
     timeline_frame_layout->addWidget(top_scrub);

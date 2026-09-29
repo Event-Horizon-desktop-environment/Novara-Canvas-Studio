@@ -106,8 +106,8 @@ void build_left_dock(MainWindow& mw) {
 
     auto* pool_tab = new QWidget(left_tabs);
     auto* pool_root_layout = new QVBoxLayout(pool_tab);
-    pool_root_layout->setContentsMargins(8, 8, 8, 8);
-    pool_root_layout->setSpacing(8);
+    pool_root_layout->setContentsMargins(12, 12, 12, 12);
+    pool_root_layout->setSpacing(12);
 
     auto* search_row = new QWidget(pool_tab);
     auto* search_layout = new QHBoxLayout(search_row);
@@ -132,7 +132,7 @@ void build_left_dock(MainWindow& mw) {
     auto* import_btn = new QPushButton(MainWindow::tr("Import"), search_row);
     import_btn->setObjectName(QStringLiteral("mediaImport"));
     import_btn->setCursor(Qt::PointingHandCursor);
-    import_btn->setFixedHeight(32);
+    import_btn->setFixedHeight(34);
     apply_theme_style(import_btn, [] {
         const ThemeTokens& t = tokens();
         return QStringLiteral(
@@ -150,10 +150,10 @@ void build_left_dock(MainWindow& mw) {
     auto* pool_body = new QWidget(pool_tab);
     auto* pool_body_layout = new QHBoxLayout(pool_body);
     pool_body_layout->setContentsMargins(0, 0, 0, 0);
-    pool_body_layout->setSpacing(8);
+    pool_body_layout->setSpacing(12);
 
     auto* bins_column = new QWidget(pool_body);
-    bins_column->setFixedWidth(88);
+    bins_column->setFixedWidth(96);
     auto* bins_layout = new QVBoxLayout(bins_column);
     bins_layout->setContentsMargins(0, 0, 0, 0);
     bins_layout->setSpacing(0);
@@ -282,7 +282,7 @@ void build_left_dock(MainWindow& mw) {
     mw.media_pool_->setObjectName(QStringLiteral("mediaPool"));
     apply_theme_style(mw.media_pool_, &media_pool_style);
     mw.media_pool_->setContextMenuPolicy(Qt::CustomContextMenu);
-    mw.media_pool_->setSpacing(8);
+    mw.media_pool_->setSpacing(10);
     QObject::connect(mw.media_pool_, &MediaPoolWidget::importRequested, &mw, &MainWindow::on_import_media);
     QObject::connect(mw.media_pool_, &MediaPoolWidget::deleteSelectedRequested, &mw,
                      &MainWindow::delete_selected_media);

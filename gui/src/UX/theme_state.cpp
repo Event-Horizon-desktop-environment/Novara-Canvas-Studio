@@ -48,7 +48,7 @@ QString make_flat_controls_qss() {
       "QMenu::item:selected:disabled { background: transparent; color: %6; }"
       "QMenu::item:checked { color: %8; font-weight: 600; }"
       "QMenu::item:disabled { color: %6; }"
-      "QMenu::separator { height: 1px; background: %3; margin: 6px 12px; }"
+      "QMenu::separator { height: 1px; background: %17; margin: 6px 12px; }"
       "QMenu::separator:horizontal { height: 1px; }"
       "QMenu::indicator { width: 16px; height: 16px; margin: 0 2px; }"
       "QMenu::indicator:checked { background: %13; border-radius: 4px;"
@@ -75,12 +75,12 @@ QString make_flat_controls_qss() {
       "QScrollBar::handle:horizontal:hover { background: %11; }"
       "QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }"
       "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
-      "QSlider::groove:horizontal { height: 3px; background: %10; border-radius: 1.5px; }"
-      "QSlider::handle:horizontal { width: 14px; margin: -5px 0; background: %9;"
-      "  border: none; border-radius: 7px; }"
+      "QSlider::groove:horizontal { height: 4px; background: %10; border-radius: 2px; }"
+      "QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: %1;"
+      "  border: none; border-radius: 6px; }"
       "QSlider::handle:horizontal:hover { background: %12; }"
       "QSlider::handle:horizontal:pressed { background: %9; }"
-      "QSlider::sub-page:horizontal { background: %12; border-radius: 1.5px; }"
+      "QSlider::sub-page:horizontal { background: %9; border-radius: 2px; }"
       "QCheckBox, QRadioButton { spacing: 8px; outline: none; }"
       "QCheckBox::indicator, QRadioButton::indicator { width: 16px; height: 16px;"
       "  background: %10; border: 1px solid %3; border-radius: 5px; }"
@@ -110,7 +110,7 @@ QString make_flat_controls_qss() {
            css(t.ink_muted), css(t.accent_text),
 css(t.accent), css(t.surface_higher), css(t.surface_highest),
         css(t.accent_hover), css(t.accent_press), css(t.on_accent),
-        css(t.surface), css(t.surface_raised));
+        css(t.surface), css(t.surface_raised), css(t.divider));
 }
 
 QPalette makeHorizonPalette() {

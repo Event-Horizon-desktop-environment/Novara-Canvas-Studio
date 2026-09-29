@@ -17,6 +17,7 @@ struct ThemeTokens {
     QColor border;
     QColor border_soft;
     QColor border_hi;
+    QColor divider;   // structural panel/section edges (translucent white)
     QColor ink;
     QColor ink_muted;
     QColor ink_faint;

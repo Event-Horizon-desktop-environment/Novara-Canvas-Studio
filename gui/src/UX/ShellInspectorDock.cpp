@@ -51,8 +51,8 @@ void build_inspector_dock(MainWindow& mw) {
     auto* mode_row = new QWidget(inspector_body);
     apply_theme_style(mode_row, &inspector_tab_track_style);
     auto* mode_row_layout = new QHBoxLayout(mode_row);
-    mode_row_layout->setContentsMargins(4, 4, 4, 4);
-    mode_row_layout->setSpacing(2);
+    mode_row_layout->setContentsMargins(8, 8, 8, 8);
+    mode_row_layout->setSpacing(4);
     struct ModePill { const char* label; const char* icon_name; };
     const ModePill modes[] = {
         {"Video", "settings"}, {"Audio", "volume"}, {"Effects", "mode"},
@@ -111,7 +111,7 @@ void build_inspector_dock(MainWindow& mw) {
     auto* effects_page = new QWidget(stack);
     {
         auto* page_layout = new QVBoxLayout(effects_page);
-        page_layout->setContentsMargins(8, 8, 8, 8);
+        page_layout->setContentsMargins(12, 12, 12, 12);
         page_layout->setSpacing(0);
         page_layout->addWidget(build_empty_state(
             effects_page, "effects", MainWindow::tr("Effects"),
@@ -129,7 +129,7 @@ void build_inspector_dock(MainWindow& mw) {
     auto* image_page = new QWidget(stack);
     {
         auto* page_layout = new QVBoxLayout(image_page);
-        page_layout->setContentsMargins(8, 8, 8, 8);
+        page_layout->setContentsMargins(12, 12, 12, 12);
         page_layout->setSpacing(0);
         page_layout->addWidget(build_empty_state(
             image_page, "viewport", MainWindow::tr("Image"),

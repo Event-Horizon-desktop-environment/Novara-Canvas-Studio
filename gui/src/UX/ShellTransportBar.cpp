@@ -31,7 +31,7 @@ QWidget* build_transport_bar(MainWindow& mw) {
     apply_theme_style(transport, &transport_bar_style);
     auto* transport_layout = new QHBoxLayout(transport);
     transport_layout->setContentsMargins(12, 6, 12, 6);
-    transport_layout->setSpacing(8);
+    transport_layout->setSpacing(10);
 
     auto* left_flank = new QWidget(transport);
     left_flank->setStyleSheet(QStringLiteral("background: transparent;"));

@@ -8,7 +8,7 @@ QString transport_bar_style() {
     const ThemeTokens& t = tokens();
     return QStringLiteral(
         "background-color: %1; border-top: 1px solid %2;")
-        .arg(css(t.surface), css(t.border_soft));
+        .arg(css(t.surface), css(t.divider));
 }
 
 QString timeline_tools_style() {
@@ -19,7 +19,7 @@ QString page_switcher_style() {
     const ThemeTokens& t = tokens();
     return QStringLiteral(
         "background-color: %1; border-top: 1px solid %2;")
-        .arg(css(t.surface), css(t.border_soft));
+        .arg(css(t.surface), css(t.divider));
 }
 
 QString time_label_style() {
@@ -37,7 +37,7 @@ QString media_pool_style() {
         "  border: none; margin: 0px; }"
         "QListWidget::item:hover { background: transparent; }"
         "QListWidget::item:selected { background: transparent; color: %3; }")
-        .arg(css(t.surface_low), css(t.border), css(t.ink));
+        .arg(css(t.surface_low), css(t.divider), css(t.ink));
 }
 
 QString viewer_frame_style() {
@@ -46,7 +46,7 @@ QString viewer_frame_style() {
         "QFrame#viewerFrame { background-color: %1;"
         " border: 1px solid %2;"
         " border-radius: 0px; }")
-        .arg(css(t.surface_low), css(t.border));
+        .arg(css(t.surface_low), css(t.divider));
 }
 
 QString timeline_frame_style() {
@@ -55,7 +55,7 @@ QString timeline_frame_style() {
         "QFrame#timelineFrame { background-color: %1;"
         " border: 1px solid %2;"
         " border-radius: 0px; }")
-        .arg(css(t.surface), css(t.border));
+        .arg(css(t.surface), css(t.divider));
 }
 
 QString dock_glow_style() {
@@ -73,7 +73,7 @@ QString dock_panel_style() {
         " border-right: 1px solid %2;"
         " border-bottom: 1px solid %2;"
         " border-radius: 0px; }")
-        .arg(css(t.surface_raised), css(t.border));
+        .arg(css(t.surface_raised), css(t.divider));
 }
 
 QString global_toolbar_style() {
@@ -85,7 +85,7 @@ QString top_status_bar_style() {
     const ThemeTokens& t = tokens();
     return QStringLiteral(
         "background-color: %1; border-bottom: 1px solid %2;")
-        .arg(css(t.surface), css(t.border));
+        .arg(css(t.surface), css(t.divider));
 }
 
 QString big_timecode_style() {
@@ -245,8 +245,8 @@ QString slider_style() {
     return QStringLiteral(
         "QSlider::groove:horizontal { height: 4px; background: %1; border-radius: 2px; }"
         "QSlider::sub-page:horizontal { background: %2; border-radius: 2px; }"
-        "QSlider::handle:horizontal { width: 16px; height: 16px; margin: -6px 0; background: %3;"
-        " border: none; border-radius: 4px; }"
+        "QSlider::handle:horizontal { width: 12px; height: 12px; margin: -4px 0; background: %3;"
+        " border: none; border-radius: 6px; }"
         "QSlider::handle:horizontal:hover { background: %4; }")
         .arg(css(t.border), css(t.accent), css(t.ink), css(t.surface_highest));
 }
