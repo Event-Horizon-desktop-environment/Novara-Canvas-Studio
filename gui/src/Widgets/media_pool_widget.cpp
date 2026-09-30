@@ -1,10 +1,12 @@
 #include "Widgets/media_pool_widget.hpp"
 
 #include <QAbstractItemModel>
+#include <QApplication>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QPainter>
 #include <QPainterPath>
+#include <QScreen>
 #include <QStyledItemDelegate>
 #include <QStyle>
 #include <QUrl>
@@ -29,7 +31,18 @@ QPixmap pool_drag_ghost(const QListWidgetItem* item) {
     const ThemeTokens& t = tokens();
     constexpr double kW = 96.0;
     constexpr double kH = 54.0;
+    qreal dpr = 1.0;
+    if (item && item->listWidget()) {
+        const qreal wdpr = item->listWidget()->devicePixelRatioF();
+        if (wdpr > 0.0)
+            dpr = wdpr;
+    } else if (QScreen* s = QApplication::primaryScreen()) {
+        const qreal sdpr = s->devicePixelRatio();
+        if (sdpr > 0.0)
+            dpr = sdpr;
+    }
     QPixmap pm(static_cast<int>(kW), static_cast<int>(kH));
+    pm.setDevicePixelRatio(dpr);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
@@ -106,9 +119,13 @@ public:
                 p->fillRect(top, well);
                 const QPixmap ph = icon("film-strip", QColor(0x5f, 0x7a, 0x8a))
                                         .pixmap(QSize(16, 16));
-                p->drawPixmap(top.center() - QPointF(ph.width(), ph.height()) / 2.0, ph);
+                const qreal phDpr = ph.devicePixelRatioF() > 0.0 ? ph.devicePixelRatioF() : 1.0;
+                const QSizeF phLogical(ph.width() / phDpr, ph.height() / phDpr);
+                p->drawPixmap(top.center() - QPointF(phLogical.width(), phLogical.height()) / 2.0,
+                              ph);
             } else {
-                const QSizeF src(pm.size());
+                const qreal pmDpr = pm.devicePixelRatioF() > 0.0 ? pm.devicePixelRatioF() : 1.0;
+                const QSizeF src(pm.width() / pmDpr, pm.height() / pmDpr);
                 const qreal scale = qMax(top.width() / src.width(), top.height() / src.height());
                 const QSizeF dst(src.width() * scale, src.height() * scale);
                 const QRectF target(top.center() - QPointF(dst.width(), dst.height()) / 2.0, dst);
@@ -136,9 +153,13 @@ public:
             const QColor tint = is_video ? QColor(0x5f, 0x7a, 0x8a) : QColor(0x9d, 0x86, 0xd8);
             const QPixmap ph = icon(is_video ? "film-strip" : "volume", tint)
                                    .pixmap(QSize(18, 18));
-            p->drawPixmap(thumbRect.center() - QPointF(ph.width(), ph.height()) / 2.0, ph);
+            const qreal phDpr = ph.devicePixelRatioF() > 0.0 ? ph.devicePixelRatioF() : 1.0;
+            const QSizeF phLogical(ph.width() / phDpr, ph.height() / phDpr);
+            p->drawPixmap(thumbRect.center() - QPointF(phLogical.width(), phLogical.height()) / 2.0,
+                          ph);
         } else {
-            const QSizeF src(pm.size());
+            const qreal pmDpr = pm.devicePixelRatioF() > 0.0 ? pm.devicePixelRatioF() : 1.0;
+            const QSizeF src(pm.width() / pmDpr, pm.height() / pmDpr);
             const qreal scale = qMax(thumbRect.width() / src.width(),
                                      thumbRect.height() / src.height());
             const QSizeF dst(src.width() * scale, src.height() * scale);

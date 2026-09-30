@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QFont>
 #include <QFontDatabase>
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QSettings>
 #include <QtCore/Qt>
@@ -57,6 +58,8 @@ void install_signal_quit() {
 }
 
 int main(int argc, char* argv[]) {
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     install_signal_quit();
     canvas::gui::reset_log_file();
     canvas::gui::install_logging();

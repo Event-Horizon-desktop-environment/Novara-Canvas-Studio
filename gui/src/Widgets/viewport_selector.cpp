@@ -47,9 +47,7 @@ void ViewportSelector::paintEvent(QPaintEvent*) {
     p.setFont(font());
     p.drawText(text_rect, Qt::AlignVCenter | Qt::AlignLeft, current_);
 
-    const qreal dpr = devicePixelRatioF();
-    QPixmap chevron = icon("chevron_down").pixmap(QSize(16, 16) * dpr);
-    chevron.setDevicePixelRatio(dpr);
+    const QPixmap chevron = icon("chevron_down").pixmap(QSize(16, 16));
     const QRect chevron_rect(kW - kChevronRight - 16, (kH - 16) / 2, 16, 16);
     p.drawPixmap(chevron_rect, chevron);
 }

@@ -594,7 +594,9 @@ void ViewerGL::initializeGL() {
 }
 
 void ViewerGL::resizeGL(int w, int h) {
-    glViewport(0, 0, w, h);
+    const qreal dpr = devicePixelRatioF() > 0.0 ? devicePixelRatioF() : 1.0;
+    glViewport(0, 0, std::max(1, static_cast<int>(std::lround(w * dpr))),
+               std::max(1, static_cast<int>(std::lround(h * dpr))));
 }
 
 void ViewerGL::upload_frame() {

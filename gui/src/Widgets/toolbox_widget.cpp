@@ -92,8 +92,12 @@ public:
         const QByteArray icon_name = index.data(kToolboxIconRole).toByteArray();
         if (!icon_name.isEmpty()) {
             const QPixmap ph = icon(icon_name.constData(), iconTint).pixmap(QSize(20, 20));
-            if (!ph.isNull())
-                p->drawPixmap(well.center() - QPointF(ph.width(), ph.height()) / 2.0, ph);
+            if (!ph.isNull()) {
+                const qreal phDpr = ph.devicePixelRatioF() > 0.0 ? ph.devicePixelRatioF() : 1.0;
+                const QSizeF phLogical(ph.width() / phDpr, ph.height() / phDpr);
+                p->drawPixmap(well.center() - QPointF(phLogical.width(), phLogical.height()) / 2.0,
+                              ph);
+            }
         }
         p->restore();
 
@@ -199,7 +203,9 @@ void ToolboxList::startDrag(Qt::DropActions supported) {    QListWidgetItem* ite
     drag->setMimeData(md);
 
     const ThemeTokens& t = tokens();
+    const qreal tileDpr = devicePixelRatioF() > 0.0 ? devicePixelRatioF() : 1.0;
     QPixmap tile(160, 64);
+    tile.setDevicePixelRatio(tileDpr);
     tile.fill(Qt::transparent);
     {
         QPainter p(&tile);

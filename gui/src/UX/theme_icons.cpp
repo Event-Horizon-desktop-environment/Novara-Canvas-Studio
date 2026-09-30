@@ -6,10 +6,13 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QIconEngine>
+#include <QImage>
 #include <QPainter>
 #include <QPixmap>
+#include <QScreen>
 #include <QSvgRenderer>
 
+#include <algorithm>
 #include <utility>
 
 namespace canvas::gui {
@@ -17,29 +20,61 @@ namespace canvas::gui {
 namespace {
 
 const QColor kReservedAccent(0xE5, 0x48, 0x4D);
+
+qreal global_dpr() {
+    qreal dpr = 1.0;
+    if (QApplication* app = qobject_cast<QApplication*>(QCoreApplication::instance())) {
+        dpr = app->devicePixelRatio();
+        if (QScreen* s = app->primaryScreen()) {
+            const qreal sdpr = s->devicePixelRatio();
+            if (sdpr > dpr)
+                dpr = sdpr;
+        }
+    }
+    if (dpr <= 0.0)
+        dpr = 1.0;
+    return dpr;
+}
+
 class SvgIconEngine : public QIconEngine {
 public:
     explicit SvgIconEngine(QString file, QColor normal = QColor(), bool tint = true)
         : normal_(std::move(normal)), file_(std::move(file)), tint_(tint) {}
 
-    QIconEngine* clone() const override { return new SvgIconEngine(file_, normal_); }
+    QIconEngine* clone() const override { return new SvgIconEngine(file_, normal_, tint_); }
 
-    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode, QIcon::State state) override {
-        painter->drawPixmap(rect, pixmap(rect.size(), mode, state));
+    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode, QIcon::State) override {
+        if (!painter || rect.isEmpty())
+            return;
+        qreal dpr = global_dpr();
+        if (QPaintDevice* dev = painter->device()) {
+            const qreal pdpr = dev->devicePixelRatioF();
+            if (pdpr > 0.0)
+                dpr = pdpr;
+        }
+        painter->drawPixmap(rect, render(rect.size(), dpr, mode));
     }
 
     QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State) override {
-        if (size.isEmpty())
-            return QPixmap();
-        int dpr = 1;
-        if (QApplication* app = qobject_cast<QApplication*>(QCoreApplication::instance())) {
-            dpr = int(app->devicePixelRatio());
-        }
-        const QSize px(size.width() * dpr, size.height() * dpr);
+        return render(size, global_dpr(), mode);
+    }
 
+    QPixmap scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::State, qreal scale) override {
+        const qreal dpr = (scale > 0.0) ? scale : global_dpr();
+        return render(size, dpr, mode);
+    }
+
+    QPixmap render(const QSize& logical, qreal dpr, QIcon::Mode mode) const {
+        if (logical.isEmpty())
+            return QPixmap();
+        if (dpr <= 0.0)
+            dpr = 1.0;
+        const int pw = std::max(1, qRound(logical.width() * dpr));
+        const int ph = std::max(1, qRound(logical.height() * dpr));
+        const QSize px(pw, ph);
         constexpr int kSupersample = 2;
-        const QSize big(px.width() * kSupersample, px.height() * kSupersample);
-        QPixmap hi(big);
+        const QSize big(pw * kSupersample, ph * kSupersample);
+        QImage hi(big, QImage::Format_ARGB32_Premultiplied);
         hi.fill(Qt::transparent);
         {
             QSvgRenderer renderer(QStringLiteral(":/icons/%1.svg").arg(file_));
@@ -49,43 +84,34 @@ public:
             renderer.render(&p, QRectF(QPointF(0, 0), QSizeF(big)));
             p.end();
         }
-
-        QPixmap pm(px);
-        pm.fill(Qt::transparent);
-        pm.setDevicePixelRatio(dpr);
-        {
-            QPainter d(&pm);
-            d.setRenderHint(QPainter::SmoothPixmapTransform);
-            d.drawPixmap(QRectF(QPointF(0, 0), QSizeF(px)), hi,
-                         QRectF(QPointF(0, 0), QSizeF(big)));
-            d.end();
-        }
+        QImage small = hi.scaled(px, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         QColor tint = modeColor(mode);
         if (normal_.isValid() && (mode == QIcon::Normal || mode == QIcon::Selected)) {
             tint = normal_;
         }
         if (tint_ && tint.isValid() && tint != QColor(Qt::transparent)) {
-            QPixmap layer(px);
-            layer.fill(tint);
-            layer.setDevicePixelRatio(dpr);
-            QPainter tp(&pm);
+            QPainter tp(&small);
             tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            tp.drawPixmap(0, 0, layer);
+            tp.fillRect(QRect(QPoint(0, 0), px), tint);
             tp.end();
-            QPixmap accent;
+            QImage accent;
             if (extractReservedAccent(hi, &accent)) {
-                QPainter ov(&pm);
+                QImage scaledAccent =
+                    accent.scaled(px, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                QPainter ov(&small);
                 ov.setRenderHint(QPainter::SmoothPixmapTransform);
-                ov.drawPixmap(QRectF(QPointF(0, 0), QSizeF(px)), accent,
-                              QRectF(QPointF(0, 0), QSizeF(big)));
+                ov.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                ov.drawImage(QRect(QPoint(0, 0), px), scaledAccent);
                 ov.end();
             }
         }
+        QPixmap pm = QPixmap::fromImage(small);
+        pm.setDevicePixelRatio(dpr);
         return pm;
     }
 
-    static bool extractReservedAccent(const QPixmap& src, QPixmap* out) {
-        const QImage img = src.toImage().convertToFormat(QImage::Format_ARGB32);
+    static bool extractReservedAccent(const QImage& srcImg, QImage* out) {
+        const QImage img = srcImg.convertToFormat(QImage::Format_ARGB32);
         QImage sel(img.size(), QImage::Format_ARGB32);
         sel.fill(Qt::transparent);
         const QRgb accent = kReservedAccent.rgba();
@@ -102,8 +128,9 @@ public:
                 }
             }
         }
-        if (!any) return false;
-        *out = QPixmap::fromImage(sel);
+        if (!any)
+            return false;
+        *out = sel;
         return true;
     }
 
